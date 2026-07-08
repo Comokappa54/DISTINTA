@@ -322,8 +322,9 @@
       Se il doppio clic non apre Outlook: tasto destro sul file → Apri con → Outlook (e "usa sempre questa app").
       Le email degli esportatori vengono memorizzate nel browser. Con <strong>🔗 Rubrica condivisa</strong> colleghi un file
       <strong>rubrica-condivisa.json</strong> su una cartella di rete: ogni PC che lo collega legge e scrive la stessa rubrica
-      (le modifiche vengono unite automaticamente, vince la più recente). Al primo collegamento seleziona o crea il file nella
-      cartella condivisa; se il PC chiede di "sostituire il file" conferma pure, i dati vengono uniti e non persi.
+      (le modifiche vengono unite automaticamente, vince la più recente). <strong>Sul primo PC</strong> rispondi "Annulla" e
+      <strong>crea il nuovo file</strong> nella cartella condivisa; <strong>sugli altri PC</strong> rispondi "OK" e
+      <strong>seleziona quel file esistente</strong>: le email già memorizzate su ogni PC vengono unite, non perse.
       <strong>Salva rubrica su file</strong> / <strong>Carica rubrica da file</strong> restano come copia di sicurezza manuale.
     </div>
   </div>
@@ -1444,11 +1445,31 @@ async function linkSharedRubrica() {
       + '\n\nIn alternativa usa "💾 Salva rubrica su file" / "📂 Carica rubrica da file" sulla cartella condivisa.');
     return;
   }
+  // ATTENZIONE: per un file esistente va usata la finestra APRI (showOpenFilePicker):
+  // la finestra Salva, alla conferma di "Sostituisci", SVUOTA subito il file
+  // e l'unione non troverebbe più nulla da unire.
+  const esistente = confirm('Il file rubrica-condivisa.json esiste già sulla cartella condivisa?\n\n'
+    + '• OK → collega il file ESISTENTE (le rubriche vengono unite)\n'
+    + '• Annulla → crea un NUOVO file (solo sul primo PC)');
   try {
-    sharedHandle = await window.showSaveFilePicker({
-      suggestedName: 'rubrica-condivisa.json',
-      types: [{ description: 'Rubrica esportatori (JSON)', accept: { 'application/json': ['.json'] } }]
-    });
+    let h;
+    if (esistente) {
+      [h] = await window.showOpenFilePicker({
+        types: [{ description: 'Rubrica esportatori (JSON)', accept: { 'application/json': ['.json'] } }]
+      });
+    } else {
+      h = await window.showSaveFilePicker({
+        suggestedName: 'rubrica-condivisa.json',
+        types: [{ description: 'Rubrica esportatori (JSON)', accept: { 'application/json': ['.json'] } }]
+      });
+    }
+    if ((await h.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+      if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+        alert('Senza il permesso di scrittura la rubrica condivisa non può essere aggiornata.');
+        return;
+      }
+    }
+    sharedHandle = h;
     await sharedDb.set('rubricaHandle', sharedHandle);
     await syncFromShared();
     await writeShared();
