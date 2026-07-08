@@ -309,6 +309,8 @@
       <button class="btn btn-primary btn-sm" onclick="downloadAllEmls()">✉ Tutte le mail pronte (ZIP)</button>
       <button class="btn btn-secondary btn-sm" onclick="downloadAllPdfs()">⬇ Solo i PDF (ZIP)</button>
       <span style="flex:1"></span>
+      <button class="btn btn-secondary btn-sm" id="shared-link-btn" onclick="linkSharedRubrica()">🔗 Rubrica condivisa</button>
+      <span id="shared-status" style="font-size:12px;display:none;cursor:pointer" onclick="sharedStatusClick()"></span>
       <button class="btn btn-secondary btn-sm" onclick="exportRubrica()">💾 Salva rubrica su file</button>
       <button class="btn btn-secondary btn-sm" onclick="document.getElementById('rubrica-input').click()">📂 Carica rubrica da file</button>
       <input type="file" id="rubrica-input" accept=".json" style="display:none">
@@ -318,8 +320,11 @@
       Il bottone <strong>✉ Mail</strong> scarica un file <strong>.eml</strong>: doppio clic e si apre in Outlook il messaggio
       già pronto — destinatario, oggetto, testo, <strong>bolla PDF e informativa privacy già allegate</strong> — devi solo premere Invia.
       Se il doppio clic non apre Outlook: tasto destro sul file → Apri con → Outlook (e "usa sempre questa app").
-      Le email degli esportatori vengono memorizzate nel browser; con <strong>Salva rubrica su file</strong> ne tieni una copia
-      da ricaricare se cambi PC o se il browser viene ripulito.
+      Le email degli esportatori vengono memorizzate nel browser. Con <strong>🔗 Rubrica condivisa</strong> colleghi un file
+      <strong>rubrica-condivisa.json</strong> su una cartella di rete: ogni PC che lo collega legge e scrive la stessa rubrica
+      (le modifiche vengono unite automaticamente, vince la più recente). Al primo collegamento seleziona o crea il file nella
+      cartella condivisa; se il PC chiede di "sostituire il file" conferma pure, i dati vengono uniti e non persi.
+      <strong>Salva rubrica su file</strong> / <strong>Carica rubrica da file</strong> restano come copia di sicurezza manuale.
     </div>
   </div>
 
@@ -379,12 +384,26 @@ const MAIL_BODY_DEFAULT = 'Buongiorno,\n'
   + 'Resto in attesa di un vostro gentile riscontro di ricezione.';
 let rubrica = {};
 let mailTpl = { subject: '', body: '' };
+// rubricaMeta: per ogni chiave, data/ora (ms) dell'ultima modifica — serve per unire
+// le rubriche di più PC tramite il file condiviso (vince la modifica più recente).
+let rubricaMeta = {};
+let mailTplTs = 0;
 try { rubrica = JSON.parse(localStorage.getItem('rubricaEsportatori') || '{}'); } catch (e) {}
+try { rubricaMeta = JSON.parse(localStorage.getItem('rubricaMeta') || '{}'); } catch (e) {}
 try { mailTpl = { subject: '', body: '', ...JSON.parse(localStorage.getItem('mailTemplate') || '{}') }; } catch (e) {}
+mailTplTs = parseInt(localStorage.getItem('mailTemplateTs') || '0', 10) || 0;
 if (!mailTpl.subject) mailTpl.subject = MAIL_SUBJECT_DEFAULT;
 if (!mailTpl.body) mailTpl.body = MAIL_BODY_DEFAULT;
-function saveRubrica() { localStorage.setItem('rubricaEsportatori', JSON.stringify(rubrica)); }
-function saveMailTpl() { localStorage.setItem('mailTemplate', JSON.stringify(mailTpl)); }
+function saveRubrica() {
+  localStorage.setItem('rubricaEsportatori', JSON.stringify(rubrica));
+  localStorage.setItem('rubricaMeta', JSON.stringify(rubricaMeta));
+  scheduleSharedWrite();
+}
+function saveMailTpl() {
+  localStorage.setItem('mailTemplate', JSON.stringify(mailTpl));
+  localStorage.setItem('mailTemplateTs', String(mailTplTs));
+  scheduleSharedWrite();
+}
 function rubricaKey(mittente) { return String(mittente || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 const TIPI_CAS = ["BARRE","VERGELLA","SEMIPRODOTTI","LINGOTTI","FILI DI LEGHE"];
@@ -1258,16 +1277,17 @@ function setEmail(i, value) {
   const k = rubricaKey(bolle[i].mittente);
   const v = value.trim();
   if (v) rubrica[k] = v; else delete rubrica[k];
+  rubricaMeta[k] = Date.now();
   saveRubrica();
   renderMail();
 }
 
-document.getElementById('mail-subject').addEventListener('input', e => { mailTpl.subject = e.target.value; saveMailTpl(); });
-document.getElementById('mail-body').addEventListener('input', e => { mailTpl.body = e.target.value; saveMailTpl(); });
+document.getElementById('mail-subject').addEventListener('input', e => { mailTpl.subject = e.target.value; mailTplTs = Date.now(); saveMailTpl(); });
+document.getElementById('mail-body').addEventListener('input', e => { mailTpl.body = e.target.value; mailTplTs = Date.now(); saveMailTpl(); });
 
 // Backup/ripristino rubrica (+ template) su file JSON
 function exportRubrica() {
-  const blob = new Blob([JSON.stringify({ rubrica, mailTpl }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ rubrica, meta: rubricaMeta, mailTpl, mailTplTs }, null, 2)], { type: 'application/json' });
   downloadBytes(blob, 'rubrica-esportatori.json', 'application/json');
   const msg = document.getElementById('zip-msg');
   msg.style.display = 'inline';
@@ -1279,11 +1299,196 @@ document.getElementById('rubrica-input').addEventListener('change', async e => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    if (data.rubrica) { rubrica = { ...rubrica, ...data.rubrica }; saveRubrica(); }
-    if (data.mailTpl && (data.mailTpl.subject || data.mailTpl.body)) { mailTpl = { ...mailTpl, ...data.mailTpl }; saveMailTpl(); }
+    if (data.rubrica) {
+      const now = Date.now();
+      for (const k of Object.keys(data.rubrica)) { rubrica[k] = data.rubrica[k]; rubricaMeta[k] = (data.meta && data.meta[k]) || now; }
+      saveRubrica();
+    }
+    if (data.mailTpl && (data.mailTpl.subject || data.mailTpl.body)) { mailTpl = { ...mailTpl, ...data.mailTpl }; mailTplTs = data.mailTplTs || Date.now(); saveMailTpl(); }
     renderMail();
     alert('Rubrica caricata: ' + Object.keys(rubrica).length + ' esportatori in memoria.');
   } catch (err) { alert('File rubrica non valido: ' + err.message); }
+});
+
+// ------------------------------------------------------------
+// RUBRICA CONDIVISA su file di rete (File System Access API).
+// Ogni PC collega una volta lo stesso rubrica-condivisa.json sulla cartella
+// condivisa; a ogni modifica il file viene riletto, unito (per ogni voce vince
+// il timestamp più recente, così le cancellazioni si propagano e nessun PC
+// sovrascrive il lavoro dell'altro) e riscritto. Il collegamento (handle)
+// sopravvive alla chiusura del browser via IndexedDB; alla riapertura Edge può
+// chiedere un clic di conferma per riattivare l'accesso al file.
+// ------------------------------------------------------------
+const SHARED_FSA_OK = 'showSaveFilePicker' in window;
+let sharedHandle = null;
+let sharedWriteTimer = null;
+
+const sharedDb = {
+  open() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('distintaShared', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async get(k) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const r = db.transaction('kv').objectStore('kv').get(k);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async set(k, v) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('kv', 'readwrite');
+      t.objectStore('kv').put(v, k);
+      t.oncomplete = () => res();
+      t.onerror = () => rej(t.error);
+    });
+  }
+};
+
+function setSharedStatus(kind, text) {
+  const el = document.getElementById('shared-status');
+  if (!el) return;
+  if (!text) { el.style.display = 'none'; return; }
+  el.style.display = 'inline';
+  el.style.color = kind === 'ok' ? '#2e7d32' : kind === 'err' ? '#c62828' : '#b26a00';
+  el.textContent = text;
+}
+
+// Unisce i dati letti dal file condiviso nella rubrica locale (voce per voce,
+// vince il timestamp più recente; a parità, una voce presente batte una vuota).
+function mergeSharedData(data) {
+  let changed = false;
+  const fr = (data && data.rubrica) || {};
+  const fm = (data && data.meta) || {};
+  const keys = new Set([...Object.keys(fr), ...Object.keys(fm)]);
+  for (const k of keys) {
+    const ft = fm[k] || 0, lt = rubricaMeta[k] || 0;
+    const fv = fr[k] || '', lv = rubrica[k] || '';
+    if (fv === lv) { if (ft > lt) rubricaMeta[k] = ft; continue; }
+    if (ft > lt || (ft === lt && fv && !lv)) {
+      if (fv) rubrica[k] = fv; else delete rubrica[k];
+      rubricaMeta[k] = Math.max(ft, lt);
+      changed = true;
+    }
+  }
+  const ftt = (data && data.mailTplTs) || 0;
+  if (data && data.mailTpl && ftt > mailTplTs && (data.mailTpl.subject || data.mailTpl.body)) {
+    mailTpl = { ...mailTpl, ...data.mailTpl };
+    mailTplTs = ftt;
+    changed = true;
+  }
+  return changed;
+}
+
+async function readSharedFile() {
+  const f = await sharedHandle.getFile();
+  const txt = await f.text();
+  if (!txt.trim()) return {};
+  try { return JSON.parse(txt); } catch (e) { return {}; }
+}
+
+// Lettura dal file condiviso → unione nella rubrica locale (senza scrivere).
+async function syncFromShared() {
+  if (!sharedHandle) return;
+  try {
+    if (mergeSharedData(await readSharedFile())) {
+      localStorage.setItem('rubricaEsportatori', JSON.stringify(rubrica));
+      localStorage.setItem('rubricaMeta', JSON.stringify(rubricaMeta));
+      localStorage.setItem('mailTemplate', JSON.stringify(mailTpl));
+      localStorage.setItem('mailTemplateTs', String(mailTplTs));
+      if (typeof renderMail === 'function') renderMail();
+    }
+    setSharedStatus('ok', '🟢 Rubrica condivisa attiva (' + Object.keys(rubrica).length + ' esportatori)');
+  } catch (e) {
+    setSharedStatus('err', '🔴 Rubrica condivisa non raggiungibile — clicca per riprovare');
+  }
+}
+
+// Scrittura: rilegge il file, unisce e riscrive il risultato (mai sovrascrittura cieca).
+async function writeShared() {
+  if (!sharedHandle) return;
+  try {
+    if ((await sharedHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+      setSharedStatus('warn', '🟡 Rubrica condivisa: clicca per riattivare');
+      return;
+    }
+    mergeSharedData(await readSharedFile());
+    const w = await sharedHandle.createWritable();
+    await w.write(JSON.stringify({ rubrica, meta: rubricaMeta, mailTpl, mailTplTs }, null, 2));
+    await w.close();
+    setSharedStatus('ok', '🟢 Rubrica condivisa attiva (' + Object.keys(rubrica).length + ' esportatori)');
+  } catch (e) {
+    setSharedStatus('err', '🔴 Salvataggio su rubrica condivisa fallito — clicca per riprovare');
+  }
+}
+
+function scheduleSharedWrite() {
+  if (!sharedHandle) return;
+  clearTimeout(sharedWriteTimer);
+  sharedWriteTimer = setTimeout(writeShared, 800);
+}
+
+// Primo collegamento: seleziona (o crea) il file sulla cartella di rete.
+async function linkSharedRubrica() {
+  if (!SHARED_FSA_OK) {
+    alert('Su questo PC il browser non permette il collegamento diretto a un file'
+      + (location.protocol === 'file:'
+        ? " perché la pagina è aperta con doppio clic (indirizzo file://).\n\nÈ lo stesso limite della scrittura diretta sugli Excel: aprendo l'app da un indirizzo https (o http://localhost) il collegamento funziona."
+        : '.\nUsa Microsoft Edge o Google Chrome.')
+      + '\n\nIn alternativa usa "💾 Salva rubrica su file" / "📂 Carica rubrica da file" sulla cartella condivisa.');
+    return;
+  }
+  try {
+    sharedHandle = await window.showSaveFilePicker({
+      suggestedName: 'rubrica-condivisa.json',
+      types: [{ description: 'Rubrica esportatori (JSON)', accept: { 'application/json': ['.json'] } }]
+    });
+    await sharedDb.set('rubricaHandle', sharedHandle);
+    await syncFromShared();
+    await writeShared();
+  } catch (e) { /* selezione annullata dall'utente */ }
+}
+
+// Clic sull'indicatore di stato: riattiva il permesso (serve un gesto utente) e risincronizza.
+async function sharedStatusClick() {
+  if (!sharedHandle) return;
+  try {
+    if ((await sharedHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+      if ((await sharedHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
+    }
+    await syncFromShared();
+    await writeShared();
+  } catch (e) {
+    setSharedStatus('err', '🔴 Rubrica condivisa non raggiungibile — clicca per riprovare');
+  }
+}
+
+// All'avvio: recupera il collegamento salvato; se il permesso è già attivo
+// sincronizza subito, altrimenti mostra l'invito a cliccare.
+(async function initShared() {
+  if (!SHARED_FSA_OK) return; // il bottone resta visibile: al clic spiega perché non è disponibile
+  try { sharedHandle = (await sharedDb.get('rubricaHandle')) || null; } catch (e) {}
+  if (!sharedHandle) return;
+  try {
+    if ((await sharedHandle.queryPermission({ mode: 'readwrite' })) === 'granted') await syncFromShared();
+    else setSharedStatus('warn', '🟡 Rubrica condivisa: clicca per riattivare');
+  } catch (e) {
+    setSharedStatus('err', '🔴 Rubrica condivisa non raggiungibile — clicca per riprovare');
+  }
+})();
+
+// Quando si torna sulla scheda, rilegge il file: raccoglie le modifiche fatte nel frattempo dall'altro PC.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !sharedHandle) return;
+  try {
+    if ((await sharedHandle.queryPermission({ mode: 'readwrite' })) === 'granted') await syncFromShared();
+  } catch (e) {}
 });
 
 // Taglio del PDF originale: copia le pagine così come sono (nessuna ricompressione)
