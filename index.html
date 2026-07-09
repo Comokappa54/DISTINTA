@@ -186,7 +186,7 @@
       I campi con bordo <span style="color:#b45309;font-weight:600">arancione</span> non sono stati trovati: controllali a mano
       (per la CAS anche la <strong>Merce</strong> si colora se non riconosciuta tra i prodotti selezionabili).
       <strong>Clicca su un campo</strong> per vedere il ritaglio della bolla originale da cui è stato letto, senza aprire il PDF.
-      La colonna <strong>Distinta</strong> decide dove finisce la bolla (esportatore COGNE → CAS; ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL → la loro distinta; altrimenti GROSS — correggibile).
+      La colonna <strong>Distinta</strong> decide dove finisce la bolla (esportatore COGNE → CAS; ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO → la loro distinta; altrimenti GROSS — correggibile).
       Per <strong>CHANEL</strong> compila a mano la colonna <strong>Rif.</strong> (es. 285.78.0227).
       Clicca sul nome della bolla per vedere il testo letto dall'OCR.
     </div>
@@ -198,7 +198,7 @@
     <div class="drop-pdf" id="drop-xlsx" style="padding:22px" onclick="document.getElementById('xlsx-input').click()">
       <div style="font-size:28px;margin-bottom:8px">📊</div>
       <h3 style="margin-bottom:4px">Trascina qui i file Excel delle distinte (anche insieme)</h3>
-      <p style="color:#777;font-size:13px">CAS, GROSS, ELTEK, EDILAOSTA, ORANGE, SPIGA NORD e CHANEL vengono riconosciuti automaticamente dal contenuto</p>
+      <p style="color:#777;font-size:13px">CAS, GROSS, ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL e EUROVETRO vengono riconosciuti automaticamente dal contenuto</p>
     </div>
     <input type="file" id="xlsx-input" accept=".xlsx" multiple style="display:none">
     <div class="file-status" id="xlsx-status"></div>
@@ -443,6 +443,15 @@ const SIMPLE_CLIENTS = {
     label: 'CHANEL', mittenti: ['CHANEL'], detect: 'CHANEL',
     firstRow: 5, cols: { NUM: 1, DATA: 2, BOLLA: 3, RIF: 4, IMP: 5 },
     shortMrn: false, imp: [50, 50], dataStar: false
+  },
+  EUROVETRO: {
+    label: 'EUROVETRO', mittenti: ['EUROVETRO'], detect: 'EUROVETRO SRL',
+    firstRow: 7, cols: { NUM: 1, TARGA: 2, BOLLA: 3, DATA: 4, IT: 5, CH: 6 },
+    shortMrn: true, imp: [86, 86], dataStar: true,
+    // spese doganali SEMPRE fisse (l'esportatore è sempre EUROVETRO):
+    // colonna IT = 40, colonna CH = 46. imp (86 = 40+46) serve solo al
+    // riepilogo a schermo; nel foglio i due valori li scrive "fixed".
+    fixed: { IT: 40, CH: 46 }
   }
 };
 const SIMPLE_TYPES = Object.keys(SIMPLE_CLIENTS);
@@ -2744,7 +2753,9 @@ function simpleWriteSheet(ws, entries, cfg) {
     ws.getCell(r, C.BOLLA).value = cfg.shortMrn ? mrnShort(e.bolla) : (e.bolla || '');
     if (C.EUR) ws.getCell(r, C.EUR).value = e.eur1 ? 5 : 0;
     if (C.RIF) ws.getCell(r, C.RIF).value = e.riferimento || '';
-    ws.getCell(r, C.IMP).value = e.imp;
+    if (C.IMP) ws.getCell(r, C.IMP).value = e.imp;
+    // colonne a valore fisso (es. EUROVETRO: spese IT 40, CH 46)
+    if (cfg.fixed) for (const k in cfg.fixed) if (C[k] != null) ws.getCell(r, C[k]).value = cfg.fixed[k];
   }
 
   // 7. ricalcola i risultati delle formule del piè di pagina (in ordine di riga,
