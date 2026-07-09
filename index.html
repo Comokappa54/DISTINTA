@@ -1572,10 +1572,25 @@ function b64FromBytes(bytes) {
 function b64Utf8(str) { return b64FromBytes(new TextEncoder().encode(str)); }
 function chunk76(b64) { return b64.replace(/(.{76})/g, '$1\r\n'); }
 
+// Il testo della mail (scritto in chiaro nel template) viene convertito in HTML:
+// caratteri speciali messi al sicuro e a-capo trasformati in <br>.
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function bodyToHtml(text) {
+  const inner = escapeHtml(text).replace(/\r?\n/g, '<br>\r\n');
+  return '<!DOCTYPE html>\r\n'
+    + '<html><head><meta charset="utf-8"></head>\r\n'
+    + '<body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#000">\r\n'
+    + inner + '\r\n'
+    + '</body></html>';
+}
+
 async function buildEmlForBolla(row) {
   const email = rubrica[rubricaKey(row.b.mittente)] || '';
   const subject = buildSubject(row.b);
-  const body = (mailTpl.body || MAIL_BODY_DEFAULT).replace(/\r?\n/g, '\r\n');
+  const bodyHtml = bodyToHtml(mailTpl.body || MAIL_BODY_DEFAULT);
   const pdfBytes = await buildPdfForBolla(row.b);
   const boundary = '----=_Bolla_' + Math.random().toString(36).slice(2);
   // secondo allegato fisso: informativa privacy incorporata nella pagina
@@ -1594,10 +1609,10 @@ async function buildEmlForBolla(row) {
     + 'Content-Type: multipart/mixed; boundary="' + boundary + '"\r\n'
     + '\r\n'
     + '--' + boundary + '\r\n'
-    + 'Content-Type: text/plain; charset=utf-8\r\n'
+    + 'Content-Type: text/html; charset=utf-8\r\n'
     + 'Content-Transfer-Encoding: base64\r\n'
     + '\r\n'
-    + chunk76(b64Utf8(body)) + '\r\n'
+    + chunk76(b64Utf8(bodyHtml)) + '\r\n'
     + '--' + boundary + '\r\n'
     + 'Content-Type: application/pdf; name="' + row.fileName + '"\r\n'
     + 'Content-Disposition: attachment; filename="' + row.fileName + '"\r\n'
