@@ -31,17 +31,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; color: #1a1a2e; font-size: 14px; min-height: 100vh; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #eceff4; color: #1a1a2e; font-size: 14px; min-height: 100vh; }
 
-  header { background: #1e3a5f; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-  header h1 { font-size: 18px; font-weight: 600; }
-  header span { opacity: 0.55; font-size: 13px; }
+  header { background: linear-gradient(135deg, #12325c 0%, #2f6fbf 100%); color: white; padding: 16px 24px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 12px rgba(18,50,92,0.28); }
+  header h1 { font-size: 19px; font-weight: 600; letter-spacing: 0.2px; }
+  header span { opacity: 0.7; font-size: 13px; }
 
-  .container { max-width: 1500px; margin: 0 auto; padding: 24px; }
+  .container { max-width: min(1840px, 99vw); margin: 0 auto; padding: 16px; }
 
   .btn { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; }
-  .btn-primary { background: #1e6fd9; color: white; }
-  .btn-primary:hover { background: #1558b0; }
+  .btn-primary { background: #2563eb; color: white; box-shadow: 0 1px 3px rgba(37,99,235,0.35); }
+  .btn-primary:hover { background: #1d4ed8; }
   .btn-secondary { background: #f0f2f5; color: #444; border: 1px solid #d0d5dd; }
   .btn-secondary:hover { background: #e4e7ec; }
   .btn-success { background: #2ea84a; color: white; }
@@ -64,18 +64,20 @@
   @keyframes pulse { 50% { opacity: 0.3; } }
 
   /* TABLE */
-  .card { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 18px; }
-  .card h2 { font-size: 15px; margin-bottom: 14px; }
-  .table-wrapper { overflow-x: auto; max-height: 560px; overflow-y: auto; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(18,50,92,0.08); padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin-bottom: 14px; color: #12325c; }
+  .table-wrapper { overflow-x: auto; max-height: 640px; overflow-y: auto; border-radius: 8px; border: 1px solid #e3e8f0; }
   table.res { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.res thead th { background: #1e3a5f; color: white; padding: 8px 8px; text-align: left; white-space: nowrap; font-weight: 500; position: sticky; top: 0; z-index: 1; }
-  table.res tbody tr { border-bottom: 1px solid #e5e7eb; }
-  table.res tbody tr:hover { background: #f8faff; }
-  table.res tbody td { padding: 4px 5px; vertical-align: middle; }
-  input.ci { padding: 4px 6px; border: 1.5px solid #d0d5dd; border-radius: 5px; font-size: 12px; font-family: inherit; width: 100%; outline: none; }
-  input.ci:focus { border-color: #1e6fd9; }
+  table.res thead th { background: linear-gradient(135deg, #1b3f80 0%, #2c6bbf 100%); color: white; padding: 11px 8px; text-align: left; white-space: nowrap; font-weight: 600; font-size: 12.5px; letter-spacing: 0.2px; position: sticky; top: 0; z-index: 1; }
+  table.res tbody tr { border-bottom: 1px solid #e8ebf0; }
+  table.res tbody tr:nth-child(odd) { background: #fafbfd; }
+  table.res tbody tr:hover { background: #eef4ff; }
+  table.res tbody td { padding: 5px 5px; vertical-align: middle; }
+  input.ci { padding: 5px 7px; border: 1.5px solid #d0d5dd; border-radius: 6px; font-size: 12px; font-family: inherit; width: 100%; outline: none; }
+  input.ci:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
   input.ci.missing { border-color: #f59e0b; background: #fffbeb; }
-  select.cs { padding: 4px 5px; border: 1.5px solid #d0d5dd; border-radius: 5px; font-size: 11.5px; background: white; outline: none; width: 100%; }
+  select.cs { padding: 5px 6px; border: 1.5px solid #d0d5dd; border-radius: 6px; font-size: 11.5px; background: white; outline: none; width: 100%; }
+  select.cs:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
   select.cs.dest-cas { background: #dbeafe; border-color: #93c5fd; font-weight: 700; }
   select.cs.dest-gross { background: #d1fae5; border-color: #6ee7b7; font-weight: 700; }
   select.cs.dest-eltek { background: #fef3c7; border-color: #fcd34d; font-weight: 700; }
@@ -162,21 +164,21 @@
       <table class="res">
         <thead>
           <tr>
-            <th style="width:150px">Bolla (pagine)</th>
-            <th style="width:100px">Distinta</th>
-            <th style="width:88px">Data</th>
-            <th style="width:160px">Bolla MRN</th>
-            <th style="width:105px">Targa</th>
-            <th style="width:100px">Fattura</th>
-            <th style="width:130px">Merce (CAS)</th>
-            <th style="width:70px">EUR-1</th>
-            <th style="width:60px">CH</th>
-            <th style="width:145px">Mittente</th>
-            <th style="width:145px">Destinatario</th>
-            <th style="width:130px">Descr. merce</th>
-            <th style="width:85px">TARIC</th>
-            <th style="width:95px">Rif.</th>
-            <th style="width:26px"></th>
+            <th style="width:124px">Bolla (pagine)</th>
+            <th style="width:92px">Distinta</th>
+            <th style="width:80px">Data</th>
+            <th style="width:144px">Bolla MRN</th>
+            <th style="width:96px">Targa</th>
+            <th style="width:88px">Fattura</th>
+            <th style="width:112px">Merce (CAS)</th>
+            <th style="width:60px">EUR-1</th>
+            <th style="width:50px">CH</th>
+            <th style="width:124px">Mittente</th>
+            <th style="width:124px">Destinatario</th>
+            <th style="width:110px">Descr. merce</th>
+            <th style="width:74px">TARIC</th>
+            <th style="width:82px">Rif.</th>
+            <th style="width:24px"></th>
           </tr>
         </thead>
         <tbody id="res-body"></tbody>
