@@ -912,12 +912,18 @@ function parseBolla(lines, rawText, fileName) {
   //     Una bolla può coprire più fatture → si scrivono come in distinta:
   //     prima per intero, le successive con le ultime 2 cifre (es. 1026160003-04-05) ---
   const invoiceNums = [];
+  const invoiceRaw = [];   // testo fattura VERBATIM, riga per riga (per la CAS)
   let fatL0 = null, fatL1 = null;
   for (const l of lines) {
     if (!/\bN3[8B]0\b/i.test(l.text)) continue;
     if (!fatL0) fatL0 = l;
     fatL1 = l;
     const after = l.text.split(/N3[8B]0/i)[1] || '';
+    // VERBATIM: tolgo solo l'anno ("2026") e la sigla nazione ("IT") iniziali,
+    // il resto lo tengo carattere per carattere — range "da 102056 a 102059",
+    // numeri multipli, ecc. — così non si perde nulla.
+    const raw = after.replace(/^\s*(?:20\d{2}\s+)?(?:IT\s+)?/i, '').trim();
+    if (raw) invoiceRaw.push(raw);
     for (const tok of after.split(/\s+/)) {
       // anche il range già abbreviato sulla bolla: "1026161920-21"
       const m = tok.match(/\d{6,}(?:-\d{2,})*/);
@@ -929,8 +935,10 @@ function parseBolla(lines, rawText, fileName) {
     for (const m of rawText.matchAll(/INVOICE\s*:?\s*(\d{6,})/gi)) invoiceNums.push(m[1]);
     if (invoiceNums.length) warnings.push('Fattura presa da "INVOICE": verifica');
   }
+  // testo fattura completo e fedele (tutte le righe N380 unite)
+  const fatturaRaw = invoiceRaw.join(' ').replace(/\s{2,}/g, ' ').trim();
   const fattura = formatFatture(invoiceNums);
-  if (!fattura) warnings.push('Fattura (N380) non trovata');
+  if (!fattura && !fatturaRaw) warnings.push('Fattura (N380) non trovata');
 
   // --- DESCRIZIONE MERCE: valore sulla riga sotto l'etichetta. L'OCR a volte
   //     salta la riga del valore e si finirebbe sulle etichette del modulo
@@ -1003,7 +1011,11 @@ function parseBolla(lines, rawText, fileName) {
   if (dest === 'CAS' && !merce) warnings.push('Merce CAS non riconosciuta: scegli dal menu');
 
   return {
-    fileName, dest, data, bolla, targa, fattura,
+    // per la CAS la fattura va riportata ESATTAMENTE com'è sulla bolla
+    // (verbatim), senza reinterpretare/comprimere; per gli altri clienti
+    // resta la convenzione della distinta (prima intera, poi -NN).
+    fileName, dest, data, bolla, targa,
+    fattura: (dest === 'CAS' && fatturaRaw) ? fatturaRaw : fattura,
     merce, eur1, spese_ch: null, mittente, destinatario,
     descrizione_merce: descrizione, taric, riferimento: '',
     zones, warnings, rawText
