@@ -96,13 +96,6 @@
   .txt-btn { background: none; border: none; cursor: pointer; color: #1e6fd9; font-size: 11.5px; text-decoration: underline; padding: 0; text-align: left; }
 
   /* EXPORT */
-  .export-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  .export-box { border: 1.5px solid #e0e4ea; border-radius: 10px; padding: 16px; }
-  .export-box.cas { border-color: #93c5fd; background: #f8fbff; }
-  .export-box.gross { border-color: #6ee7b7; background: #f7fffb; }
-  .export-box h3 { font-size: 13.5px; margin-bottom: 4px; }
-  .export-box .cnt { font-size: 12px; color: #666; margin-bottom: 12px; }
-  .export-box textarea { width: 100%; height: 110px; padding: 10px; border: 1px solid #d0d5dd; border-radius: 7px; font-family: 'Courier New', monospace; font-size: 11px; resize: vertical; background: white; margin-bottom: 10px; }
   .copied-msg { font-size: 12px; color: #2ea84a; font-weight: 600; margin-left: 8px; display: none; }
 
   /* MODAL raw text */
@@ -257,28 +250,6 @@
       <strong>CHANEL</strong> — MRN intero, riferimento (colonna Rif. della tabella sopra), €50 fissi.
       Le somme e il TOTALE dei fogli vengono aggiornati; se un foglio mese non esiste ancora nel file va creato prima a mano.
     </div>
-  </div>
-
-  <!-- EXPORT JSON (riserva per le vecchie pagine) -->
-  <div class="card hidden" id="export-card">
-    <h2>Esporta JSON per le vecchie pagine distinta (riserva)</h2>
-    <div class="export-grid">
-      <div class="export-box cas">
-        <h3>📘 Distinta CAS Export</h3>
-        <div class="cnt" id="cas-cnt">0 bolle</div>
-        <textarea id="cas-json" readonly></textarea>
-        <button class="btn btn-primary btn-sm" onclick="copyJson('cas')">Copia JSON CAS</button>
-        <span class="copied-msg" id="cas-copied">✓ Copiato</span>
-      </div>
-      <div class="export-box gross">
-        <h3>📗 Distinta GROSS Export</h3>
-        <div class="cnt" id="gross-cnt">0 spedizioni</div>
-        <textarea id="gross-json" readonly></textarea>
-        <button class="btn btn-success btn-sm" onclick="copyJson('gross')">Copia JSON GROSS</button>
-        <span class="copied-msg" id="gross-copied">✓ Copiato</span>
-      </div>
-    </div>
-    <div class="hint">Incolla il JSON nello Step 1 della pagina distinta corrispondente. Le regole di targa/*, NS.Comp e raggruppamento camion vengono applicate lì, come sempre.</div>
   </div>
 
   <!-- MAIL: PDF divisi per esportatore -->
@@ -1100,18 +1071,27 @@ function sortBolle() {
     if (!da !== !db) return da ? -1 : 1;
     return (a.bolla || '').localeCompare(b.bolla || '', 'it');
   });
+  // stessa targa nello stesso giorno e stessa distinta = stesso camion:
+  // le bolle restano ADIACENTI anche se per MRN ci starebbe altro in mezzo
+  const key = b => b.targa && b.data ? (b.dest + '|' + b.data + '|' + String(b.targa).trim().toUpperCase()) : null;
+  const out = [];
+  for (const b of bolle) {
+    const k = key(b);
+    let at = -1;
+    if (k) for (let i = out.length - 1; i >= 0; i--) if (key(out[i]) === k) { at = i + 1; break; }
+    if (at >= 0) out.splice(at, 0, b); else out.push(b);
+  }
+  bolle.length = 0; bolle.push(...out);
 }
 
 function renderAll() {
   const has = bolle.length > 0;
   document.getElementById('results-card').classList.toggle('hidden', !has);
   document.getElementById('excel-card').classList.toggle('hidden', !has);
-  document.getElementById('export-card').classList.toggle('hidden', !has);
   document.getElementById('global-actions').classList.toggle('hidden', !has);
   if (!has) { document.getElementById('mail-card').classList.add('hidden'); return; }
   sortBolle();
   renderTable();
-  renderExport();
   renderMail();
   renderExcelSummary();
 }
@@ -1193,40 +1173,11 @@ function setB(i, field, value) {
   // cambiando la distinta la riga si sposta subito nel suo gruppo;
   // per gli altri campi l'ordine resta fermo mentre si corregge
   if (field === 'dest') sortBolle();
-  renderTable(); renderExport(); renderMail(); renderExcelSummary();
+  renderTable(); renderMail(); renderExcelSummary();
 }
 function delB(i) { bolle.splice(i, 1); renderAll(); if (!bolle.length) document.getElementById('file-status').innerHTML = ''; }
 
 function shortName(n) { return n.length > 26 ? '…' + n.slice(-24) : n; }
-
-// ============================================================
-// EXPORT JSON — stessi formati attesi dalle due pagine distinta
-// ============================================================
-function renderExport() {
-  const cas = bolle.filter(b => b.dest === 'CAS').map(b => ({
-    data: b.data, bolla: b.bolla, targa: b.targa || null,
-    fattura: b.fattura, merce: b.merce, eur1: b.eur1 === true
-  }));
-  const gross = bolle.filter(b => b.dest === 'GROSS').map(b => ({
-    data: b.data, targa: b.targa || null,
-    mittente: b.mittente, destinatario: b.destinatario,
-    descrizione_merce: b.descrizione_merce, taric: b.taric
-  }));
-  document.getElementById('cas-json').value = cas.length ? JSON.stringify(cas) : '';
-  document.getElementById('gross-json').value = gross.length ? JSON.stringify(gross) : '';
-  document.getElementById('cas-cnt').textContent = `${cas.length} boll${cas.length === 1 ? 'a' : 'e'}`;
-  document.getElementById('gross-cnt').textContent = `${gross.length} spedizion${gross.length === 1 ? 'e' : 'i'}`;
-}
-
-function copyJson(which) {
-  const v = document.getElementById(which + '-json').value;
-  if (!v) return;
-  navigator.clipboard.writeText(v).then(() => {
-    const msg = document.getElementById(which + '-copied');
-    msg.style.display = 'inline';
-    setTimeout(() => msg.style.display = 'none', 2000);
-  });
-}
 
 function resetAll() {
   bolle = [];
@@ -2033,16 +1984,23 @@ function renderPreview(tipi) {
   if (tipi.includes('GROSS')) {
     html += `<h4 style="font-size:12.5px;margin:8px 0 4px"><span class="dist-tag gross">GROSS</span> → ${escHtml(distinte.GROSS.name)}</h4>
       <table class="summary-table"><thead><tr><th>Camion</th><th>Data</th><th>Rif.</th><th>Targa</th><th>Mittente</th><th>Destinatario</th><th>Importo</th></tr></thead><tbody>`;
+    let misti = 0;
     buildCamions(grossRows()).forEach((cam, ci) => {
-      const t = cam.spedizioni[0].tariffa || 'STANDARD';
+      const misto = camionMisto(cam);
+      if (misto) misti++;
       cam.spedizioni.forEach((s, i) => {
-        const imp = i === 0 ? (t === 'PIASTRELLE' ? 30 : 40) : (t === 'PIASTRELLE' ? 10 : 20);
+        const warn = misto && (s.tariffa || 'STANDARD') !== (cam.spedizioni[0].tariffa || 'STANDARD')
+          ? ` <span title="Tariffa ${escHtml(s.tariffa || 'STANDARD')} in un camion ${escHtml(cam.spedizioni[0].tariffa || 'STANDARD')}" style="color:#b45309">⚠</span>` : '';
         html += `<tr><td>${i === 0 ? '+' + (ci + 1) : '↳'}</td><td>${i === 0 ? escHtml(s.data) : ''}</td>
           <td>${i === 0 ? escHtml(s.riferimento) : ''}</td><td>${i === 0 ? escHtml(s.targa || '-') : ''}</td>
-          <td>${escHtml(s.mittente)}</td><td>${escHtml(s.destinatario)}</td><td>€ ${imp}</td></tr>`;
+          <td>${escHtml(s.mittente)}</td><td>${escHtml(s.destinatario)}</td><td>€ ${grossImp(cam.spedizioni, i)}${warn}</td></tr>`;
       });
     });
-    html += '</tbody></table><div class="hint">La numerazione camion prosegue da quella già presente nel foglio.</div>';
+    html += '</tbody></table>';
+    if (misti) html += `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;color:#92400e">
+      ⚠ <strong>Attenzione: ${misti} camion con piastrelle e merce standard insieme.</strong>
+      Ogni spedizione è prezzata con la SUA tariffa (non-piastrelle €20, piastrelle €10 dopo la prima riga): controlla gli importi segnati con ⚠.</div>`;
+    html += '<div class="hint">La numerazione camion prosegue da quella già presente nel foglio.</div>';
   }
   if (tipi.includes('ELTEK')) {
     html += `<h4 style="font-size:12.5px;margin:8px 0 4px"><span class="dist-tag eltek">ELTEK</span> → ${escHtml(distinte.ELTEK.name)}</h4>
@@ -2232,17 +2190,19 @@ function renderExcelSummary() {
     });
     html += `<h3 style="font-size:13px;margin-top:10px"><span class="dist-tag gross">GROSS</span> ${gross.length} spedizioni ${distinte.GROSS ? '→ ' + escHtml(distinte.GROSS.name) : '<span style="color:#e53e3e">— carica il file Excel GROSS</span>'}</h3>`;
     html += `<table class="summary-table"><thead><tr><th>Mese</th><th>Camion</th><th>Spedizioni</th><th>Totale €</th><th>Foglio</th></tr></thead><tbody>`;
+    let misti = 0;
     for (const [m, cams] of Object.entries(byMonth)) {
       const nS = cams.reduce((s,c)=>s+c.spedizioni.length,0);
-      const tot = cams.reduce((s,cam) => {
-        const t = cam.spedizioni[0].tariffa || 'STANDARD';
-        return s + cam.spedizioni.reduce((cs,_,p) => cs + (p===0 ? (t==='PIASTRELLE'?30:40) : (t==='PIASTRELLE'?10:20)), 0);
-      }, 0);
+      misti += cams.filter(camionMisto).length;
+      const tot = cams.reduce((s,cam) => s + cam.spedizioni.reduce((cs,_,p) => cs + grossImp(cam.spedizioni, p), 0), 0);
       const ok = distinte.GROSS && distinte.GROSS.sheetNames.includes(m);
       html += `<tr><td>${m}</td><td>${cams.length}</td><td>${nS}</td><td>€ ${tot}</td>
         <td>${!distinte.GROSS ? '—' : ok ? '✅' : '<span style="color:#e53e3e">❌ non trovato</span>'}</td></tr>`;
     }
     html += '</tbody></table>';
+    if (misti) html += `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:12.5px;color:#92400e">
+      ⚠ <strong>Attenzione: ${misti} camion GROSS con piastrelle e merce standard insieme.</strong>
+      Le spedizioni non-piastrelle di quei camion valgono €20 (€40 se prime), le piastrelle €10 (€30): controlla l'anteprima prima di scrivere.</div>`;
   }
 
   el.innerHTML = html;
@@ -2364,14 +2324,26 @@ function dateToSerial(d) {
 // ============================================================
 // MOTORE CAS (ExcelJS — identico alla pagina distinta CAS)
 // ============================================================
-// Ordine: data ASC, poi bolla; * e comp 20 solo se la targa si ripete nella stessa data
+// Ordine: data ASC, poi bolla; * e comp 20 solo se la targa si ripete nella stessa data.
+// ECCEZIONE: due bolle con la STESSA TARGA nello stesso giorno sono lo stesso
+// camion e vanno ADIACENTI anche se per bolla ci starebbe un altro MRN in mezzo
+// (altrimenti la "*" e gli importi prima/successiva finirebbero spezzati).
 function casSortRows(sourceRows) {
-  return [...sourceRows].sort((a, b) => {
+  const sorted = [...sourceRows].sort((a, b) => {
     const da = parseDate(a.data), db = parseDate(b.data);
     if (!da && !db) return 0; if (!da) return 1; if (!db) return -1;
     if (da - db !== 0) return da - db;
     return (a.bolla || '').localeCompare(b.bolla || '', 'it', { numeric: false });
   });
+  const targaKey = r => r.targa && r.data ? (r.data + '|' + String(r.targa).trim().toUpperCase()) : null;
+  const out = [];
+  for (const r of sorted) {
+    const k = targaKey(r);
+    let at = -1;
+    if (k) for (let i = out.length - 1; i >= 0; i--) if (targaKey(out[i]) === k) { at = i + 1; break; }
+    if (at >= 0) out.splice(at, 0, r); else out.push(r);
+  }
+  return out;
 }
 function casComputeDisplayRows(sourceRows) {
   const seenPerDate = {};
@@ -2866,6 +2838,17 @@ function classifyTariffa(taric, descrizione) {
   return 'STANDARD';
 }
 
+// Importo di una spedizione: conta la tariffa della SINGOLA spedizione, non
+// quella del camion — un camion può essere MISTO piastrelle+standard: le
+// non-piastrelle valgono €20 (€40 se prima riga), le piastrelle €10 (€30)
+function grossImp(sped, i) {
+  const t = sped[i].tariffa || 'STANDARD';
+  return i === 0 ? (t === 'PIASTRELLE' ? 30 : 40) : (t === 'PIASTRELLE' ? 10 : 20);
+}
+function camionMisto(cam) {
+  return new Set(cam.spedizioni.map(s => s.tariffa || 'STANDARD')).size > 1;
+}
+
 // Stessa (data + targa) non-null → stesso camion; targa null → camion singolo
 function buildCamions(sourceRows) {
   const camionMap = new Map(), camionOrder = [];
@@ -2913,8 +2896,7 @@ function cellXml(col, rowN, style, tipo, val) {
 function camionRowsXml(cam, startN, camNum) {
   const sped = cam.spedizioni;
   const n = sped.length;
-  const tar = sped[0].tariffa || 'STANDARD';
-  const imp = i => i === 0 ? (tar === 'PIASTRELLE' ? 30 : 40) : (tar === 'PIASTRELLE' ? 10 : 20);
+  const imp = i => grossImp(sped, i);
   const total = sped.reduce((s, _, i) => s + imp(i), 0);
   const dSerial = (() => { const d = parseDate(sped[0].data); return d ? dateToSerial(d) : null; })();
   const rowOpen = (rn, thick) =>
