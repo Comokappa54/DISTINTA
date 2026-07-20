@@ -31,17 +31,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; color: #1a1a2e; font-size: 14px; min-height: 100vh; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #eceff4; color: #1a1a2e; font-size: 14px; min-height: 100vh; }
 
-  header { background: #1e3a5f; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-  header h1 { font-size: 18px; font-weight: 600; }
-  header span { opacity: 0.55; font-size: 13px; }
+  header { background: linear-gradient(135deg, #12325c 0%, #2f6fbf 100%); color: white; padding: 16px 24px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 12px rgba(18,50,92,0.28); }
+  header h1 { font-size: 19px; font-weight: 600; letter-spacing: 0.2px; }
+  header span { opacity: 0.7; font-size: 13px; }
 
-  .container { max-width: 1500px; margin: 0 auto; padding: 24px; }
+  .container { max-width: min(1840px, 99vw); margin: 0 auto; padding: 16px; }
 
   .btn { padding: 9px 18px; border-radius: 7px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; }
-  .btn-primary { background: #1e6fd9; color: white; }
-  .btn-primary:hover { background: #1558b0; }
+  .btn-primary { background: #2563eb; color: white; box-shadow: 0 1px 3px rgba(37,99,235,0.35); }
+  .btn-primary:hover { background: #1d4ed8; }
   .btn-secondary { background: #f0f2f5; color: #444; border: 1px solid #d0d5dd; }
   .btn-secondary:hover { background: #e4e7ec; }
   .btn-success { background: #2ea84a; color: white; }
@@ -64,18 +64,20 @@
   @keyframes pulse { 50% { opacity: 0.3; } }
 
   /* TABLE */
-  .card { background: white; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 20px; margin-bottom: 18px; }
-  .card h2 { font-size: 15px; margin-bottom: 14px; }
-  .table-wrapper { overflow-x: auto; max-height: 560px; overflow-y: auto; }
+  .card { background: white; border-radius: 12px; box-shadow: 0 2px 12px rgba(18,50,92,0.08); padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin-bottom: 14px; color: #12325c; }
+  .table-wrapper { overflow-x: auto; max-height: 640px; overflow-y: auto; border-radius: 8px; border: 1px solid #e3e8f0; }
   table.res { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.res thead th { background: #1e3a5f; color: white; padding: 8px 8px; text-align: left; white-space: nowrap; font-weight: 500; position: sticky; top: 0; z-index: 1; }
-  table.res tbody tr { border-bottom: 1px solid #e5e7eb; }
-  table.res tbody tr:hover { background: #f8faff; }
-  table.res tbody td { padding: 4px 5px; vertical-align: middle; }
-  input.ci { padding: 4px 6px; border: 1.5px solid #d0d5dd; border-radius: 5px; font-size: 12px; font-family: inherit; width: 100%; outline: none; }
-  input.ci:focus { border-color: #1e6fd9; }
+  table.res thead th { background: linear-gradient(135deg, #1b3f80 0%, #2c6bbf 100%); color: white; padding: 11px 8px; text-align: left; white-space: nowrap; font-weight: 600; font-size: 12.5px; letter-spacing: 0.2px; position: sticky; top: 0; z-index: 1; }
+  table.res tbody tr { border-bottom: 1px solid #e8ebf0; }
+  table.res tbody tr:nth-child(odd) { background: #fafbfd; }
+  table.res tbody tr:hover { background: #eef4ff; }
+  table.res tbody td { padding: 5px 5px; vertical-align: middle; }
+  input.ci { padding: 5px 7px; border: 1.5px solid #d0d5dd; border-radius: 6px; font-size: 12px; font-family: inherit; width: 100%; outline: none; }
+  input.ci:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
   input.ci.missing { border-color: #f59e0b; background: #fffbeb; }
-  select.cs { padding: 4px 5px; border: 1.5px solid #d0d5dd; border-radius: 5px; font-size: 11.5px; background: white; outline: none; width: 100%; }
+  select.cs { padding: 5px 6px; border: 1.5px solid #d0d5dd; border-radius: 6px; font-size: 11.5px; background: white; outline: none; width: 100%; }
+  select.cs:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.12); }
   select.cs.dest-cas { background: #dbeafe; border-color: #93c5fd; font-weight: 700; }
   select.cs.dest-gross { background: #d1fae5; border-color: #6ee7b7; font-weight: 700; }
   select.cs.dest-eltek { background: #fef3c7; border-color: #fcd34d; font-weight: 700; }
@@ -155,21 +157,21 @@
       <table class="res">
         <thead>
           <tr>
-            <th style="width:150px">Bolla (pagine)</th>
-            <th style="width:100px">Distinta</th>
-            <th style="width:88px">Data</th>
-            <th style="width:160px">Bolla MRN</th>
-            <th style="width:105px">Targa</th>
-            <th style="width:100px">Fattura</th>
-            <th style="width:130px">Merce (CAS)</th>
-            <th style="width:70px">EUR-1</th>
-            <th style="width:60px">CH</th>
-            <th style="width:145px">Mittente</th>
-            <th style="width:145px">Destinatario</th>
-            <th style="width:130px">Descr. merce</th>
-            <th style="width:85px">TARIC</th>
-            <th style="width:95px">Rif.</th>
-            <th style="width:26px"></th>
+            <th style="width:124px">Bolla (pagine)</th>
+            <th style="width:92px">Distinta</th>
+            <th style="width:80px">Data</th>
+            <th style="width:144px">Bolla MRN</th>
+            <th style="width:96px">Targa</th>
+            <th style="width:88px">Fattura</th>
+            <th style="width:112px">Merce (CAS)</th>
+            <th style="width:60px">EUR-1</th>
+            <th style="width:50px">CH</th>
+            <th style="width:124px">Mittente</th>
+            <th style="width:124px">Destinatario</th>
+            <th style="width:110px">Descr. merce</th>
+            <th style="width:74px">TARIC</th>
+            <th style="width:82px">Rif.</th>
+            <th style="width:24px"></th>
           </tr>
         </thead>
         <tbody id="res-body"></tbody>
@@ -179,7 +181,7 @@
       I campi con bordo <span style="color:#b45309;font-weight:600">arancione</span> non sono stati trovati: controllali a mano
       (per la CAS anche la <strong>Merce</strong> si colora se non riconosciuta tra i prodotti selezionabili).
       <strong>Clicca su un campo</strong> per vedere il ritaglio della bolla originale da cui è stato letto, senza aprire il PDF.
-      La colonna <strong>Distinta</strong> decide dove finisce la bolla (esportatore COGNE → CAS; ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL → la loro distinta; altrimenti GROSS — correggibile).
+      La colonna <strong>Distinta</strong> decide dove finisce la bolla (esportatore COGNE → CAS; ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO, EM SOLUTIONS, IPAN → la loro distinta; altrimenti GROSS — correggibile).
       Per <strong>CHANEL</strong> compila a mano la colonna <strong>Rif.</strong> (es. 285.78.0227).
       Clicca sul nome della bolla per vedere il testo letto dall'OCR.
     </div>
@@ -191,7 +193,7 @@
     <div class="drop-pdf" id="drop-xlsx" style="padding:22px" onclick="document.getElementById('xlsx-input').click()">
       <div style="font-size:28px;margin-bottom:8px">📊</div>
       <h3 style="margin-bottom:4px">Trascina qui i file Excel delle distinte (anche insieme)</h3>
-      <p style="color:#777;font-size:13px">CAS, GROSS, ELTEK, EDILAOSTA, ORANGE, SPIGA NORD e CHANEL vengono riconosciuti automaticamente dal contenuto</p>
+      <p style="color:#777;font-size:13px">CAS, GROSS, ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO, EM SOLUTIONS e IPAN vengono riconosciuti automaticamente dal contenuto</p>
     </div>
     <input type="file" id="xlsx-input" accept=".xlsx" multiple style="display:none">
     <div class="file-status" id="xlsx-status"></div>
@@ -417,6 +419,29 @@ const SIMPLE_CLIENTS = {
     label: 'CHANEL', mittenti: ['CHANEL'], detect: 'CHANEL',
     firstRow: 5, cols: { NUM: 1, DATA: 2, BOLLA: 3, RIF: 4, IMP: 5 },
     shortMrn: false, imp: [50, 50], dataStar: false
+  },
+  EUROVETRO: {
+    label: 'EUROVETRO', mittenti: ['EUROVETRO'], detect: 'EUROVETRO SRL',
+    firstRow: 7, cols: { NUM: 1, TARGA: 2, BOLLA: 3, DATA: 4, IT: 5, CH: 6 },
+    shortMrn: true, imp: [86, 86], dataStar: true,
+    // spese doganali SEMPRE fisse (l'esportatore è sempre EUROVETRO):
+    // colonna IT = 40, colonna CH = 46. imp (86 = 40+46) serve solo al
+    // riepilogo a schermo; nel foglio i due valori li scrive "fixed".
+    fixed: { IT: 40, CH: 46 }
+  },
+  EM: {
+    label: 'EM SOLUTIONS', mittenti: ['EM SOLUTIONS', 'EM SOLUTION'], detect: 'EM SOLUTIONS',
+    firstRow: 7, cols: { NUM: 1, DATA: 2, BOLLA: 3, EUR: 4, IMP: 5 },
+    shortMrn: false, imp: [60, 60], dataStar: true,
+    // prezzi sempre uguali (come nell'Excel): IMPORTO 60, EUR1 5
+    fixed: { EUR: 5 }
+  },
+  IPAN: {
+    label: 'IPAN SPA', mittenti: ['IPAN', 'I-PAN'], detect: 'I-PAN SPA',
+    firstRow: 7, cols: { NUM: 1, TARGA: 2, BOLLA: 3, DATA: 4, EUR: 5, IMP: 6 },
+    shortMrn: true, imp: [60, 60], dataStar: true,
+    // prezzi sempre uguali (come nell'Excel): IMPORTO 60, EUR1 5
+    fixed: { EUR: 5 }
   }
 };
 const SIMPLE_TYPES = Object.keys(SIMPLE_CLIENTS);
@@ -861,12 +886,18 @@ function parseBolla(lines, rawText, fileName) {
   //     Una bolla può coprire più fatture → si scrivono come in distinta:
   //     prima per intero, le successive con le ultime 2 cifre (es. 1026160003-04-05) ---
   const invoiceNums = [];
+  const invoiceRaw = [];   // testo fattura VERBATIM, riga per riga (per la CAS)
   let fatL0 = null, fatL1 = null;
   for (const l of lines) {
     if (!/\bN3[8B]0\b/i.test(l.text)) continue;
     if (!fatL0) fatL0 = l;
     fatL1 = l;
     const after = l.text.split(/N3[8B]0/i)[1] || '';
+    // VERBATIM: tolgo solo l'anno ("2026") e la sigla nazione ("IT") iniziali,
+    // il resto lo tengo carattere per carattere — range "da 102056 a 102059",
+    // numeri multipli, ecc. — così non si perde nulla.
+    const raw = after.replace(/^\s*(?:20\d{2}\s+)?(?:IT\s+)?/i, '').trim();
+    if (raw) invoiceRaw.push(raw);
     for (const tok of after.split(/\s+/)) {
       // anche il range già abbreviato sulla bolla: "1026161920-21"
       const m = tok.match(/\d{6,}(?:-\d{2,})*/);
@@ -878,8 +909,10 @@ function parseBolla(lines, rawText, fileName) {
     for (const m of rawText.matchAll(/INVOICE\s*:?\s*(\d{6,})/gi)) invoiceNums.push(m[1]);
     if (invoiceNums.length) warnings.push('Fattura presa da "INVOICE": verifica');
   }
+  // testo fattura completo e fedele (tutte le righe N380 unite)
+  const fatturaRaw = invoiceRaw.join(' ').replace(/\s{2,}/g, ' ').trim();
   const fattura = formatFatture(invoiceNums);
-  if (!fattura) warnings.push('Fattura (N380) non trovata');
+  if (!fattura && !fatturaRaw) warnings.push('Fattura (N380) non trovata');
 
   // --- DESCRIZIONE MERCE: valore sulla riga sotto l'etichetta. L'OCR a volte
   //     salta la riga del valore e si finirebbe sulle etichette del modulo
@@ -952,7 +985,11 @@ function parseBolla(lines, rawText, fileName) {
   if (dest === 'CAS' && !merce) warnings.push('Merce CAS non riconosciuta: scegli dal menu');
 
   return {
-    fileName, dest, data, bolla, targa, fattura,
+    // per la CAS la fattura va riportata ESATTAMENTE com'è sulla bolla
+    // (verbatim), senza reinterpretare/comprimere; per gli altri clienti
+    // resta la convenzione della distinta (prima intera, poi -NN).
+    fileName, dest, data, bolla, targa,
+    fattura: (dest === 'CAS' && fatturaRaw) ? fatturaRaw : fattura,
     merce, eur1, spese_ch: null, mittente, destinatario,
     descrizione_merce: descrizione, taric, riferimento: '',
     zones, warnings, rawText
@@ -1526,10 +1563,25 @@ function b64FromBytes(bytes) {
 function b64Utf8(str) { return b64FromBytes(new TextEncoder().encode(str)); }
 function chunk76(b64) { return b64.replace(/(.{76})/g, '$1\r\n'); }
 
+// Il testo della mail (scritto in chiaro nel template) viene convertito in HTML:
+// caratteri speciali messi al sicuro e a-capo trasformati in <br>.
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function bodyToHtml(text) {
+  const inner = escapeHtml(text).replace(/\r?\n/g, '<br>\r\n');
+  return '<!DOCTYPE html>\r\n'
+    + '<html><head><meta charset="utf-8"></head>\r\n'
+    + '<body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#000">\r\n'
+    + inner + '\r\n'
+    + '</body></html>';
+}
+
 async function buildEmlForBolla(row) {
   const email = rubrica[rubricaKey(row.b.mittente)] || '';
   const subject = buildSubject(row.b);
-  const body = (mailTpl.body || MAIL_BODY_DEFAULT).replace(/\r?\n/g, '\r\n');
+  const bodyHtml = bodyToHtml(mailTpl.body || MAIL_BODY_DEFAULT);
   const pdfBytes = await buildPdfForBolla(row.b);
   const boundary = '----=_Bolla_' + Math.random().toString(36).slice(2);
   // secondo allegato fisso: informativa privacy incorporata nella pagina
@@ -1548,10 +1600,10 @@ async function buildEmlForBolla(row) {
     + 'Content-Type: multipart/mixed; boundary="' + boundary + '"\r\n'
     + '\r\n'
     + '--' + boundary + '\r\n'
-    + 'Content-Type: text/plain; charset=utf-8\r\n'
+    + 'Content-Type: text/html; charset=utf-8\r\n'
     + 'Content-Transfer-Encoding: base64\r\n'
     + '\r\n'
-    + chunk76(b64Utf8(body)) + '\r\n'
+    + chunk76(b64Utf8(bodyHtml)) + '\r\n'
     + '--' + boundary + '\r\n'
     + 'Content-Type: application/pdf; name="' + row.fileName + '"\r\n'
     + 'Content-Disposition: attachment; filename="' + row.fileName + '"\r\n'
@@ -2788,7 +2840,9 @@ function simpleWriteSheet(ws, entries, cfg) {
     ws.getCell(r, C.BOLLA).value = cfg.shortMrn ? mrnShort(e.bolla) : (e.bolla || '');
     if (C.EUR) ws.getCell(r, C.EUR).value = e.eur1 ? 5 : 0;
     if (C.RIF) ws.getCell(r, C.RIF).value = e.riferimento || '';
-    ws.getCell(r, C.IMP).value = e.imp;
+    if (C.IMP) ws.getCell(r, C.IMP).value = e.imp;
+    // colonne a valore fisso (es. EUROVETRO: spese IT 40, CH 46)
+    if (cfg.fixed) for (const k in cfg.fixed) if (C[k] != null) ws.getCell(r, C[k]).value = cfg.fixed[k];
   }
 
   // 7. ricalcola i risultati delle formule del piè di pagina (in ordine di riga,
