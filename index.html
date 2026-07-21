@@ -861,8 +861,13 @@ function parseBolla(lines, rawText, fileName) {
     const vLine = lines[imIdx + 1];
     // posizioni X delle occorrenze dell'etichetta e delle "Nazione"
     const cols = [];
-    for (let i = 0; i < lbl.words.length - 1; i++) {
-      if (/dentificativ/i.test(lbl.words[i].str) && /^mezzo/i.test(lbl.words[i + 1].str)) cols.push(lbl.words[i].x);
+    for (let i = 0; i < lbl.words.length; i++) {
+      // OCR: "Identificativo" e "Mezzo" sono due parole separate;
+      // testo nativo del PDF digitale: "Identificativo Mezzo" è un unico token
+      const single = /dentificativ\w*\s+mezzo/i.test(lbl.words[i].str);
+      const pair = /dentificativ/i.test(lbl.words[i].str)
+                && lbl.words[i + 1] && /^mezzo/i.test(lbl.words[i + 1].str);
+      if (single || pair) cols.push(lbl.words[i].x);
     }
     const nazs = lbl.words.filter(w => /nazione/i.test(w.str)).map(w => w.x);
     const margin = lbl.width * 0.01;
@@ -909,8 +914,10 @@ function parseBolla(lines, rawText, fileName) {
     for (const m of rawText.matchAll(/INVOICE\s*:?\s*(\d{6,})/gi)) invoiceNums.push(m[1]);
     if (invoiceNums.length) warnings.push('Fattura presa da "INVOICE": verifica');
   }
-  // testo fattura completo e fedele (tutte le righe N380 unite)
-  const fatturaRaw = invoiceRaw.join(' ').replace(/\s{2,}/g, ' ').trim();
+  // testo fattura completo e fedele (tutte le righe N380 unite). Cogne (CAS)
+  // ripete lo STESSO numero su più articoli: un numero identico va scritto una
+  // sola volta, ma fatture diverse (anche per una cifra) restano tutte.
+  const fatturaRaw = [...new Set(invoiceRaw)].join(' ').replace(/\s{2,}/g, ' ').trim();
   const fattura = formatFatture(invoiceNums);
   if (!fattura && !fatturaRaw) warnings.push('Fattura (N380) non trovata');
 
