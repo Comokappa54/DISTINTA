@@ -630,6 +630,13 @@ function cleanPlate(s) {
   return String(s || '').toUpperCase().replace(/[^A-Z0-9\-\/]/g, '');
 }
 
+// Chiave di confronto fra targhe: conta solo lettere e cifre, così
+// "VS 123 456", "vs123456" e "VS-123456" sono lo STESSO camion
+function plateKey(t) {
+  const s = String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s || null;
+}
+
 // Un valore "da targa": 5-20 caratteri, almeno 2 cifre e 1 lettera,
 // niente nomi di nazioni o etichette del modulo
 const PLATE_BLACKLIST = /ITALIA|SVIZZERA|FRANCIA|GERMANIA|AUSTRIA|SPAGNA|BELGIO|NAZIONE|DETTAGLIO|ARTICOLO|DOGANA|SVINCOLO|STRADA|IMMATRICOLAZ|COD|REG/;
@@ -889,26 +896,36 @@ function parseBolla(lines, rawText, fileName) {
 
   // --- FATTURA: TUTTE le righe documenti "DOC N380 2026 IT 1026161861".
   //     Una bolla può coprire più fatture → si scrivono come in distinta:
-  //     prima per intero, le successive con le ultime 2 cifre (es. 1026160003-04-05) ---
+  //     prima per intero, le successive con le ultime 2 cifre (es. 1026160003-04-05).
+  //     Alcune bolle (ELTEK in particolare) non hanno una fattura commerciale
+  //     N380 ma una fattura PROFORMA, codice documento N325 e numeri tipo
+  //     "DOC N325 2026 IT 90069518": si leggono allo stesso modo, ma solo se
+  //     nella bolla non c'è nessuna N380 (la fattura vera ha la precedenza) ---
   const invoiceNums = [];
   const invoiceRaw = [];   // testo fattura VERBATIM, riga per riga (per la CAS)
   let fatL0 = null, fatL1 = null;
-  for (const l of lines) {
-    if (!/\bN3[8B]0\b/i.test(l.text)) continue;
-    if (!fatL0) fatL0 = l;
-    fatL1 = l;
-    const after = l.text.split(/N3[8B]0/i)[1] || '';
-    // VERBATIM: tolgo solo l'anno ("2026") e la sigla nazione ("IT") iniziali,
-    // il resto lo tengo carattere per carattere — range "da 102056 a 102059",
-    // numeri multipli, ecc. — così non si perde nulla.
-    const raw = after.replace(/^\s*(?:20\d{2}\s+)?(?:IT\s+)?/i, '').trim();
-    if (raw) invoiceRaw.push(raw);
-    for (const tok of after.split(/\s+/)) {
-      // anche il range già abbreviato sulla bolla: "1026161920-21"
-      const m = tok.match(/\d{6,}(?:-\d{2,})*/);
-      if (m && m[0].length >= 6) { invoiceNums.push(m[0]); break; }   // un numero per riga N380
+  const RE_N380 = /\bN3[8B]0\b/i;        // fattura commerciale
+  const RE_N325 = /\bN3[2Z][5S]\b/i;     // fattura proforma (varianti OCR 2/Z, 5/S)
+  const collectDocs = re => {
+    for (const l of lines) {
+      if (!re.test(l.text)) continue;
+      if (!fatL0) fatL0 = l;
+      fatL1 = l;
+      const after = l.text.split(re)[1] || '';
+      // VERBATIM: tolgo solo l'anno ("2026") e la sigla nazione ("IT") iniziali,
+      // il resto lo tengo carattere per carattere — range "da 102056 a 102059",
+      // numeri multipli, ecc. — così non si perde nulla.
+      const raw = after.replace(/^\s*(?:20\d{2}\s+)?(?:IT\s+)?/i, '').trim();
+      if (raw) invoiceRaw.push(raw);
+      for (const tok of after.split(/\s+/)) {
+        // anche il range già abbreviato sulla bolla: "1026161920-21"
+        const m = tok.match(/\d{6,}(?:-\d{2,})*/);
+        if (m && m[0].length >= 6) { invoiceNums.push(m[0]); break; }   // un numero per riga
+      }
     }
-  }
+  };
+  collectDocs(RE_N380);
+  if (!invoiceNums.length && !invoiceRaw.length) collectDocs(RE_N325);
   if (fatL0) zones.fattura = zoneFromLines(fatL0, fatL1);
   if (!invoiceNums.length) {
     for (const m of rawText.matchAll(/INVOICE\s*:?\s*(\d{6,})/gi)) invoiceNums.push(m[1]);
@@ -1115,9 +1132,12 @@ function sortBolle() {
     if (!da !== !db) return da ? -1 : 1;
     return (a.bolla || '').localeCompare(b.bolla || '', 'it');
   });
-  // stessa targa nello stesso giorno e stessa distinta = stesso camion:
-  // le bolle restano ADIACENTI anche se per MRN ci starebbe altro in mezzo
-  const key = b => b.targa && b.data ? (b.dest + '|' + b.data + '|' + String(b.targa).trim().toUpperCase()) : null;
+  // stessa targa nella stessa distinta = stesso camion: le bolle restano
+  // ADIACENTI anche se per data/MRN ci starebbe altro in mezzo. Vale per
+  // TUTTE le distinte (CAS, GROSS, ELTEK, clienti semplici) e NON richiede
+  // la stessa data: se una data è letta male le righe dello stesso camion
+  // restano comunque una sotto l'altra e l'errore si vede subito.
+  const key = b => { const t = plateKey(b.targa); return t ? b.dest + '|' + t : null; };
   const out = [];
   for (const b of bolle) {
     const k = key(b);
@@ -1214,9 +1234,10 @@ function renderTable() {
 function setB(i, field, value) {
   hideZone();
   bolle[i][field] = value;
-  // cambiando la distinta la riga si sposta subito nel suo gruppo;
-  // per gli altri campi l'ordine resta fermo mentre si corregge
-  if (field === 'dest') sortBolle();
+  // distinta, targa e data decidono il raggruppamento: correggendoli la riga
+  // si sposta subito accanto alle altre dello stesso camion / della stessa
+  // distinta; per gli altri campi l'ordine resta fermo mentre si corregge
+  if (field === 'dest' || field === 'targa' || field === 'data') sortBolle();
   renderTable(); renderMail(); renderExcelSummary();
 }
 function delB(i) { bolle.splice(i, 1); renderAll(); if (!bolle.length) document.getElementById('file-status').innerHTML = ''; }
@@ -2394,7 +2415,7 @@ function casSortRows(sourceRows) {
     if (da - db !== 0) return da - db;
     return (a.bolla || '').localeCompare(b.bolla || '', 'it', { numeric: false });
   });
-  const targaKey = r => r.targa && r.data ? (r.data + '|' + String(r.targa).trim().toUpperCase()) : null;
+  const targaKey = r => r.data && plateKey(r.targa) ? (r.data + '|' + plateKey(r.targa)) : null;
   const out = [];
   for (const r of sorted) {
     const k = targaKey(r);
@@ -2914,7 +2935,7 @@ function camionMisto(cam) {
 function buildCamions(sourceRows) {
   const camionMap = new Map(), camionOrder = [];
   sourceRows.forEach((r, idx) => {
-    const targa = r.targa ? r.targa.trim().toUpperCase() : null;
+    const targa = plateKey(r.targa);
     const key = !targa ? `__null_${idx}` : `${(r.data || '').trim()}||${targa}`;
     if (!camionMap.has(key)) { camionMap.set(key, []); camionOrder.push(key); }
     camionMap.get(key).push(idx);
