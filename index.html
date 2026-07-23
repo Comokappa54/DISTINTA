@@ -181,7 +181,7 @@
       I campi con bordo <span style="color:#b45309;font-weight:600">arancione</span> non sono stati trovati: controllali a mano
       (per la CAS anche la <strong>Merce</strong> si colora se non riconosciuta tra i prodotti selezionabili).
       <strong>Clicca su un campo</strong> per vedere il ritaglio della bolla originale da cui è stato letto, senza aprire il PDF.
-      La colonna <strong>Distinta</strong> decide dove finisce la bolla (esportatore COGNE → CAS; ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO, EM SOLUTIONS, IPAN → la loro distinta; altrimenti GROSS — correggibile).
+      La colonna <strong>Distinta</strong> decide dove finisce la bolla (esportatore COGNE → CAS; ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO, EM SOLUTIONS, IPAN, FASSA, VIMA MARMI → la loro distinta; FIXIT si riconosce dall'importatore; altrimenti GROSS — correggibile).
       Per <strong>CHANEL</strong> compila a mano la colonna <strong>Rif.</strong> (es. 285.78.0227).
       Clicca sul nome della bolla per vedere il testo letto dall'OCR.
     </div>
@@ -193,7 +193,7 @@
     <div class="drop-pdf" id="drop-xlsx" style="padding:22px" onclick="document.getElementById('xlsx-input').click()">
       <div style="font-size:28px;margin-bottom:8px">📊</div>
       <h3 style="margin-bottom:4px">Trascina qui i file Excel delle distinte (anche insieme)</h3>
-      <p style="color:#777;font-size:13px">CAS, GROSS, ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO, EM SOLUTIONS e IPAN vengono riconosciuti automaticamente dal contenuto</p>
+      <p style="color:#777;font-size:13px">CAS, GROSS, ELTEK, EDILAOSTA, ORANGE, SPIGA NORD, CHANEL, EUROVETRO, EM SOLUTIONS, IPAN, FASSA, FIXIT e VIMA MARMI vengono riconosciuti automaticamente dal contenuto</p>
     </div>
     <input type="file" id="xlsx-input" accept=".xlsx" multiple style="display:none">
     <div class="file-status" id="xlsx-status"></div>
@@ -250,6 +250,7 @@
       <strong>EDILAOSTA / ORANGE</strong> — bolla "tagliata" (EO22385), EUR-1 €5, prima bolla del camion €60 e successive €20, date/targhe ripetute → "*".
       <strong>SPIGA NORD</strong> — targa, MRN intero, €60 a bolla (€20 se stesso camion).
       <strong>CHANEL</strong> — MRN intero, riferimento (colonna Rif. della tabella sopra), €50 fissi.
+      <strong>FASSA</strong> — targa, MRN intero, N. fattura, €40 a bolla. <strong>FIXIT</strong> — riconosciuta dall'IMPORTATORE (l'esportatore cambia), bolla "tagliata", €30 a bolla. <strong>VIMA MARMI</strong> — bolla "tagliata", EUR-1 €5, €50 la prima bolla del camion e €20 le successive.
       Le somme e il TOTALE dei fogli vengono aggiornati; se un foglio mese non esiste ancora nel file va creato prima a mano.
     </div>
   </div>
@@ -398,6 +399,9 @@ const MITTENTI_ELTEK = ["ELTEK"];
 //   imp       = [prima bolla del camion, successive dello stesso camion]
 //   dataStar  = data "*" se uguale alla riga precedente (CHANEL scrive sempre la data)
 //   detect    = testo che riconosce il file Excel; mittenti = riconoscimento bolla
+//   destinatari = riconoscimento dall'IMPORTATORE invece che dall'esportatore
+//               (FIXIT: l'esportatore cambia — PERLITE ITALIANA ecc. — chi paga
+//                la distinta è il destinatario svizzero)
 // ------------------------------------------------------------
 const SIMPLE_CLIENTS = {
   EDILAOSTA: {
@@ -442,6 +446,26 @@ const SIMPLE_CLIENTS = {
     shortMrn: true, imp: [60, 60], dataStar: true,
     // prezzi sempre uguali (come nell'Excel): IMPORTO 60, EUR1 5
     fixed: { EUR: 5 }
+  },
+  FASSA: {
+    label: 'FASSA', mittenti: ['FASSA'], detect: 'FASSA SRL',
+    // unica distinta "semplice" con la colonna N. FATTURA (come CAS/ELTEK:
+    // più fatture sulla stessa bolla → "2612000232-33")
+    firstRow: 7, cols: { NUM: 1, TARGA: 2, BOLLA: 3, DATA: 4, FATT: 5, IMP: 6 },
+    // MRN intero; €40 sempre (due bolle sullo stesso camion non capitano)
+    shortMrn: false, imp: [40, 40], dataStar: true
+  },
+  FIXIT: {
+    // l'esportatore cambia (PERLITE ITALIANA…): si riconosce dall'IMPORTATORE
+    label: 'FIXIT', mittenti: [], destinatari: ['FIXIT'], detect: 'FIXIT AG',
+    firstRow: 7, cols: { NUM: 1, TARGA: 2, BOLLA: 3, DATA: 4, IMP: 5 },
+    shortMrn: true, imp: [30, 30], dataStar: true
+  },
+  VIMA: {
+    label: 'VIMA MARMI', mittenti: ['VIMA'], detect: 'VIMA MARMI',
+    firstRow: 7, cols: { NUM: 1, TARGA: 2, BOLLA: 3, DATA: 4, EUR: 5, IMP: 6 },
+    // €50 la prima bolla del camion, €20 le successive (fogli MAGGIO/GIUGNO)
+    shortMrn: true, imp: [50, 20], dataStar: true
   }
 };
 const SIMPLE_TYPES = Object.keys(SIMPLE_CLIENTS);
@@ -627,7 +651,10 @@ function isMrnToken(w) {
 }
 
 function cleanPlate(s) {
-  return String(s || '').toUpperCase().replace(/[^A-Z0-9\-\/]/g, '');
+  // nel testo nativo del PDF le due targhe (motrice/rimorchio) sono separate
+  // da "#": diventa "-" come nelle distinte compilate a mano
+  return String(s || '').toUpperCase().replace(/#/g, '-')
+    .replace(/[^A-Z0-9\-\/]/g, '').replace(/^[\-\/]+|[\-\/]+$/g, '');
 }
 
 // Chiave di confronto fra targhe: conta solo lettere e cifre, così
@@ -1000,10 +1027,14 @@ function parseBolla(lines, rawText, fileName) {
   if (!destinatario) warnings.push('Destinatario non trovato');
 
   // --- DESTINAZIONE: CAS o GROSS ---
+  // quasi tutti i clienti si riconoscono dall'ESPORTATORE; per FIXIT
+  // l'esportatore cambia e a pagare è l'IMPORTATORE (destinatari)
   const mittUp = mittente.toUpperCase();
+  const destUp = destinatario.toUpperCase();
   const dest = MITTENTI_CAS.some(k => mittUp.includes(k)) ? 'CAS'
              : MITTENTI_ELTEK.some(k => mittUp.includes(k)) ? 'ELTEK'
-             : SIMPLE_TYPES.find(t => SIMPLE_CLIENTS[t].mittenti.some(k => mittUp.includes(k)))
+             : SIMPLE_TYPES.find(t => SIMPLE_CLIENTS[t].mittenti.some(k => mittUp.includes(k))
+                 || (SIMPLE_CLIENTS[t].destinatari || []).some(k => destUp.includes(k)))
              || 'GROSS';
 
   if (dest === 'CAS' && !merce) warnings.push('Merce CAS non riconosciuta: scegli dal menu');
@@ -1168,7 +1199,9 @@ function relevantWarnings(b) {
   if (b.dest === 'ELTEK') return b.warnings.filter(w => !/TARIC|EUR-1|Targa|Descrizione|Destinatario|Codice documento|Identificativo Mezzo|Merce CAS/i.test(w));
   const cfg = SIMPLE_CLIENTS[b.dest];
   if (cfg) return b.warnings.filter(w => {
-    if (/TARIC|Fattura|Descrizione|Destinatario|Merce CAS/i.test(w)) return false;
+    // la fattura serve solo a chi ha la colonna N. FATTURA (FASSA)
+    if (/Fattura/i.test(w) && !cfg.cols.FATT) return false;
+    if (/TARIC|Descrizione|Destinatario|Merce CAS/i.test(w)) return false;
     if (!cfg.cols.EUR && /EUR-1|Codice documento/i.test(w)) return false;
     // la targa serve (anche senza colonna) per la regola prima bolla / successive;
     // solo CHANEL (importo fisso) non la usa affatto
@@ -2096,13 +2129,14 @@ function renderPreview(tipi) {
     if (!tipi.includes(t)) continue;
     const cfg = SIMPLE_CLIENTS[t];
     html += `<h4 style="font-size:12.5px;margin:8px 0 4px"><span class="dist-tag alt">${cfg.label}</span> → ${escHtml(distinte[t].name)}</h4>
-      <table class="summary-table"><thead><tr><th>Mese</th><th>Data</th>${cfg.cols.TARGA ? '<th>Targa</th>' : ''}<th>Bolla</th>${cfg.cols.EUR ? '<th>EUR-1</th>' : ''}${cfg.cols.RIF ? '<th>Rif.</th>' : ''}<th>Importo</th></tr></thead><tbody>`;
+      <table class="summary-table"><thead><tr><th>Mese</th><th>Data</th>${cfg.cols.TARGA ? '<th>Targa</th>' : ''}<th>Bolla</th>${cfg.cols.FATT ? '<th>Fattura</th>' : ''}${cfg.cols.EUR ? '<th>EUR-1</th>' : ''}${cfg.cols.RIF ? '<th>Rif.</th>' : ''}<th>Importo</th></tr></thead><tbody>`;
     for (const r of simpleRows(t)) {
       const d = parseDate(r.data);
       const bollaOut = cfg.shortMrn ? mrnShort(r.bolla) : r.bolla;
       html += `<tr><td>${d ? MESI[d.getMonth()] : '?'}</td><td>${escHtml(r.data)}</td>
         ${cfg.cols.TARGA ? `<td>${escHtml(r.displayTarga)}</td>` : ''}
         <td style="font-size:11px">${escHtml(bollaOut)}</td>
+        ${cfg.cols.FATT ? `<td>${r.fattura ? escHtml(r.fattura) : '<span style="color:#e53e3e">manca!</span>'}</td>` : ''}
         ${cfg.cols.EUR ? `<td>${r.eur1 ? '€ 5' : '€ 0'}</td>` : ''}
         ${cfg.cols.RIF ? `<td>${r.riferimento ? escHtml(r.riferimento) : '<span style="color:#e53e3e">manca!</span>'}</td>` : ''}
         <td>€ ${r.imp}</td></tr>`;
@@ -2204,7 +2238,7 @@ function simpleRows(t) {
   return simpleComputeDisplayRows(casSortRows(bolle.filter(b => b.dest === t).map(b => ({
     data: b.data, bolla: b.bolla,
     targa: b.targa ? String(b.targa).trim().toUpperCase() : null,
-    eur1: b.eur1 === true, riferimento: (b.riferimento || '').trim()
+    eur1: b.eur1 === true, fattura: b.fattura, riferimento: (b.riferimento || '').trim()
   }))), cfg);
 }
 
@@ -2720,7 +2754,8 @@ function eltekWriteSheet(ws, entries) {
 }
 
 // ============================================================
-// MOTORE CLIENTI SEMPLICI (ExcelJS) — EDILAOSTA / ORANGE / SPIGA NORD / CHANEL.
+// MOTORE CLIENTI SEMPLICI (ExcelJS) — EDILAOSTA / ORANGE / SPIGA NORD / CHANEL /
+// EUROVETRO / EM SOLUTIONS / IPAN / FASSA / FIXIT / VIMA MARMI.
 // Layout comune: fogli mese MAIUSCOLI, slot pre-numerati in colonna A,
 // piè di pagina con imposta di bollo (€2) e righe SOMMA/TOTALE.
 // Le differenze (colonne, importi, MRN corto, "*") stanno in SIMPLE_CLIENTS.
@@ -2785,7 +2820,11 @@ function simpleWriteSheet(ws, entries, cfg) {
   for (let r = FR; r <= ws.rowCount && footerStart < 0; r++) {
     for (let c = 1; c <= maxCol + 2; c++) {
       const v = ws.getCell(r, c).value;
-      if ((v && typeof v === 'object' && (v.formula || v.sharedFormula))
+      const isFormula = v && typeof v === 'object' && (v.formula || v.sharedFormula);
+      // ATTENZIONE: in alcune distinte (VIMA MARMI) gli slot pre-numerati della
+      // colonna A sono FORMULE (=A7+1) — non sono piè di pagina, altrimenti la
+      // prima riga libera verrebbe scambiata per la riga delle somme
+      if ((isFormula && c !== C.NUM)
           || /IMPOSTA DI BOLLO|TOTALE/i.test(cellText(v))) { footerStart = r; break; }
     }
   }
@@ -2867,6 +2906,7 @@ function simpleWriteSheet(ws, entries, cfg) {
     if (C.TARGA) ws.getCell(r, C.TARGA).value = e.displayTarga;
     ws.getCell(r, C.BOLLA).value = cfg.shortMrn ? mrnShort(e.bolla) : (e.bolla || '');
     if (C.EUR) ws.getCell(r, C.EUR).value = e.eur1 ? 5 : 0;
+    if (C.FATT) ws.getCell(r, C.FATT).value = e.fattura || '';
     if (C.RIF) ws.getCell(r, C.RIF).value = e.riferimento || '';
     if (C.IMP) ws.getCell(r, C.IMP).value = e.imp;
     // colonne a valore fisso (es. EUROVETRO: spese IT 40, CH 46)
