@@ -518,7 +518,7 @@ async function handleFiles(files) {
       setChip(chipId, 'ok', `${n} boll${n === 1 ? 'a' : 'e'} estratt${n === 1 ? 'a' : 'e'}`);
     } catch (err) {
       console.error(err);
-      setChip(chipId, 'err', err.message);
+      setChip(chipId, 'err', msgErrore(err));
     }
     renderAll();
   }
@@ -1360,7 +1360,7 @@ document.getElementById('rubrica-input').addEventListener('change', async e => {
     if (data.mailTpl && (data.mailTpl.subject || data.mailTpl.body)) { mailTpl = { ...mailTpl, ...data.mailTpl }; mailTplTs = data.mailTplTs || Date.now(); saveMailTpl(); }
     renderMail();
     alert('Rubrica caricata: ' + Object.keys(rubrica).length + ' esportatori in memoria.');
-  } catch (err) { alert('File rubrica non valido: ' + err.message); }
+  } catch (err) { alert('File rubrica non valido: ' + msgErrore(err)); }
 });
 
 // ------------------------------------------------------------
@@ -1590,7 +1590,7 @@ async function downloadBolla(i) {
   if (!row) return;
   try {
     downloadBytes(await buildPdfForBolla(row.b), row.fileName);
-  } catch (e) { alert('Errore taglio PDF: ' + e.message); }
+  } catch (e) { alert('Errore taglio PDF: ' + msgErrore(e)); }
 }
 
 // Numero bolla "tagliato" per l'oggetto: parte dell'MRN dopo la T dell'ufficio
@@ -1684,7 +1684,7 @@ async function mailBolla(i) {
     const eml = await buildEmlForBolla(row);
     downloadBytes(new Blob([eml], { type: 'message/rfc822' }),
       row.fileName.replace(/\.pdf$/i, '.eml'), 'message/rfc822');
-  } catch (e) { alert('Errore creazione mail: ' + e.message); }
+  } catch (e) { alert('Errore creazione mail: ' + msgErrore(e)); }
 }
 
 // Tutte le mail pronte in uno ZIP (solo le righe con email compilata)
@@ -1696,7 +1696,7 @@ async function downloadAllEmls() {
     for (const r of rows) zip.file(r.fileName.replace(/\.pdf$/i, '.eml'), await buildEmlForBolla(r));
     const blob = await zip.generateAsync({ type: 'blob' });
     downloadBytes(blob, 'Mail bolle GROSS.zip', 'application/zip');
-  } catch (e) { alert('Errore creazione ZIP mail: ' + e.message); }
+  } catch (e) { alert('Errore creazione ZIP mail: ' + msgErrore(e)); }
 }
 
 async function downloadAllPdfs() {
@@ -1712,7 +1712,7 @@ async function downloadAllPdfs() {
     const msg = document.getElementById('zip-msg');
     msg.style.display = 'inline';
     setTimeout(() => msg.style.display = 'none', 2500);
-  } catch (e) { alert('Errore creazione ZIP: ' + e.message); }
+  } catch (e) { alert('Errore creazione ZIP: ' + msgErrore(e)); }
 }
 
 // ============================================================
@@ -1810,7 +1810,7 @@ async function showZone(i, field, anchor) {
       pop.style.top = Math.max(4, r.top - ph - 8) + 'px';
     }
   } catch (e) {
-    if (my === zoomToken) document.getElementById('zoom-cap').textContent = 'Anteprima non disponibile: ' + e.message;
+    if (my === zoomToken) document.getElementById('zoom-cap').textContent = 'Anteprima non disponibile: ' + msgErrore(e);
   }
 }
 function hideZone() {
@@ -1873,7 +1873,7 @@ async function loadDistinta(file) {
     distinte[type] = { name: file.name, buffer, sheetNames: det.sheetNames };
     setChip(chipId, 'ok', `distinta ${distLabel(type)} — ${det.sheetNames.length} fogli`);
   } catch (e) {
-    setChip(chipId, 'err', e.message);
+    setChip(chipId, 'err', msgErrore(e));
   }
   renderExcelSummary();
   return type;
@@ -1935,7 +1935,7 @@ async function collegaCartella() {
     if (!n) alert('Nella cartella scelta non è stata riconosciuta nessuna distinta (file .xlsx con i fogli dei mesi).\n\nScegli la cartella che contiene gli Excel CAS / GROSS / ELTEK / clienti.');
   } catch (e) {
     if (e.name === 'AbortError') return;
-    alert('Collegamento cartella non riuscito: ' + e.message);
+    alert('Collegamento cartella non riuscito: ' + msgErrore(e));
   }
 }
 
@@ -1995,7 +1995,7 @@ async function collegaFiles() {
         const det = await detectDistinta(buffer);
         fileHandles[det.type] = h;
         distinte[det.type] = { name: file.name, buffer, sheetNames: det.sheetNames };
-      } catch (e) { alert(`${file.name}: ${e.message}`); }
+      } catch (e) { alert(`${file.name}: ${msgErrore(e)}`); }
     }
     await idbSet('handles', { ...fileHandles });
     renderLinkStatus();
@@ -2006,7 +2006,7 @@ async function collegaFiles() {
       alert('Il browser ha bloccato l\'accesso ai file senza chiedere (impostazione o policy del browser).\n\nProva da Chrome/Edge aggiornati; se succede solo su alcuni PC, controlla lucchetto nella barra dell\'indirizzo → Impostazioni sito → "Modifica file". In alternativa usa "Scrivi e scarica copie".');
       return;
     }
-    alert('Collegamento non riuscito: ' + e.message);
+    alert('Collegamento non riuscito: ' + msgErrore(e));
   }
 }
 
@@ -2179,7 +2179,7 @@ async function confermaScrittura() {
     } catch (e) {
       const msg = /NoModificationAllowed|state.*locked|access/i.test(String(e))
         ? `${t} — impossibile scrivere: il file è probabilmente APERTO in Excel. Chiudilo e riprova.`
-        : `${t} — ${e.message}`;
+        : `${t} — ${msgErrore(e)}`;
       errors.push(msg);
     }
   }
@@ -2204,7 +2204,7 @@ async function ripristinaBackup(t) {
     await w.write(bk.bytes);
     await w.close();
     alert(`✅ ${t} ripristinato.`);
-  } catch (e) { alert('Ripristino non riuscito: ' + e.message); }
+  } catch (e) { alert('Ripristino non riuscito: ' + msgErrore(e)); }
 }
 
 // ============================================================
@@ -2374,7 +2374,7 @@ async function doWriteAll(result) {
       errors.push(...r.errors.map(e => lbl + ' — ' + e));
       downloadBytes(new Blob([r.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
         distinte[t].name.replace(/\.xlsx$/i, '_aggiornato.xlsx'));
-    } catch (e) { errors.push(lbl + ' — ' + e.message); }
+    } catch (e) { errors.push(lbl + ' — ' + msgErrore(e)); }
   }
 
   if (eltek.length && distinte.ELTEK) {
@@ -2384,7 +2384,7 @@ async function doWriteAll(result) {
       errors.push(...r.errors.map(e => 'ELTEK — ' + e));
       downloadBytes(new Blob([r.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
         distinte.ELTEK.name.replace(/\.xlsx$/i, '_aggiornato.xlsx'));
-    } catch (e) { errors.push('ELTEK — ' + e.message); }
+    } catch (e) { errors.push('ELTEK — ' + msgErrore(e)); }
   }
 
   if (cas.length && distinte.CAS) {
@@ -2394,7 +2394,7 @@ async function doWriteAll(result) {
       errors.push(...r.errors.map(e => 'CAS — ' + e));
       downloadBytes(new Blob([r.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
         distinte.CAS.name.replace(/\.xlsx$/i, '_aggiornato.xlsx'));
-    } catch (e) { errors.push('CAS — ' + e.message); }
+    } catch (e) { errors.push('CAS — ' + msgErrore(e)); }
   }
   if (gross.length && distinte.GROSS) {
     try {
@@ -2402,7 +2402,7 @@ async function doWriteAll(result) {
       written.push(...r.written.map(w => 'GROSS — ' + w));
       errors.push(...r.errors.map(e => 'GROSS — ' + e));
       downloadBytes(r.blob, distinte.GROSS.name.replace(/\.xlsx$/i, '_aggiornato.xlsx'));
-    } catch (e) { errors.push('GROSS — ' + e.message); }
+    } catch (e) { errors.push('GROSS — ' + msgErrore(e)); }
   }
 
   result.style.display = 'block';
@@ -2489,6 +2489,45 @@ function cellText(v) {
 }
 function cloneStyle(o) { return o ? JSON.parse(JSON.stringify(o)) : o; }
 
+// FORMULE "CONDIVISE" (shared formulas) — in alcuni fogli (VIMA MARMI, ELTEK)
+// gli slot pre-numerati della colonna A sono un blocco condiviso: una cella
+// "master" (es. A9 = A8+1) e tutte le altre che la copiano. Se la scrittura
+// sovrascrive la master, le copie restano orfane e il salvataggio fallisce con
+// "shared formula master must exist above and or left of clone for A10".
+// Prima di toccare il foglio ogni formula condivisa diventa una formula
+// normale, identica come risultato ma indipendente.
+function unshareFormulas(ws) {
+  ws.eachRow({ includeEmpty: true }, row => {
+    row.eachCell({ includeEmpty: true }, cell => {
+      const v = cell.value;
+      if (!v || typeof v !== 'object') return;
+      if (v.sharedFormula) {
+        // copia: prendo la formula della master e sposto i riferimenti di riga
+        const master = ws.getCell(v.sharedFormula);
+        const mv = master.value;
+        const f = (mv && typeof mv === 'object' && mv.formula) ? mv.formula : '';
+        cell.value = f
+          ? { formula: shiftFormulaRows(f, cell.row - master.row, cell.col - master.col), result: v.result }
+          : (typeof v.result === 'number' ? v.result : null);
+      } else if (v.formula && v.shareType) {
+        cell.value = { formula: v.formula, result: v.result };   // master → formula normale
+      }
+    });
+  });
+}
+// Sposta i riferimenti RELATIVI di una formula di tante righe/colonne quante
+// ne separano la copia dalla master (A8+1 → A9+1); i riferimenti assoluti
+// ($A$8) restano fermi, come in Excel
+function shiftFormulaRows(f, dRow, dCol) {
+  if (!dRow && !dCol) return String(f);
+  return String(f).replace(/(\$?)([A-Z]+)(\$?)(\d+)/g, (m, cAbs, col, rAbs, r) => {
+    const nCol = cAbs || !dCol ? col : numToCol(Math.max(1, colToNum(col) + dCol));
+    const nRow = rAbs || !dRow ? r : Number(r) + dRow;
+    return cAbs + nCol + rAbs + nRow;
+  });
+}
+function numToCol(n) { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; } return s; }
+
 // Uno slot "numerato" in colonna A può essere un numero o una formula (=A6+1)
 // anche SENZA risultato in cache: cellText da sola non basterebbe
 function hasNumberSlot(cell) {
@@ -2517,13 +2556,14 @@ async function writeCas(rows) {
     try {
       const n = casWriteSheet(ws, entries);
       written.push(`${month}: ${n} righe inserite`);
-    } catch (e) { errors.push(`${month}: ${e.message}`); }
+    } catch (e) { errors.push(`${month}: ${msgErrore(e)}`); }
   }
   const buffer = await workbook.xlsx.writeBuffer();
   return { buffer, written, errors };
 }
 
 function casWriteSheet(ws, entries) {
+  unshareFormulas(ws);
   // 1. riga TOTALE (colonna C)
   let totaleRow = -1;
   for (let r = 1; r <= ws.rowCount + 5; r++) {
@@ -2660,7 +2700,7 @@ async function writeEltek(rows) {
     try {
       const n = eltekWriteSheet(ws, entries);
       written.push(`${ws.name}: ${n} righe inserite`);
-    } catch (e) { errors.push(`${month}: ${e.message}`); }
+    } catch (e) { errors.push(`${month}: ${msgErrore(e)}`); }
   }
   const buffer = await workbook.xlsx.writeBuffer();
   return { buffer, written, errors };
@@ -2668,6 +2708,7 @@ async function writeEltek(rows) {
 
 function eltekWriteSheet(ws, entries) {
   const FR = ELTEK_FIRST_ROW;
+  unshareFormulas(ws);
   // 1. riga TOTALE ("TOTALE" in colonna D)
   let totaleRow = -1;
   for (let r = 1; r <= ws.rowCount + 5; r++) {
@@ -2804,7 +2845,7 @@ async function writeSimple(type, rows) {
     try {
       const n = simpleWriteSheet(ws, entries, cfg);
       written.push(`${ws.name}: ${n} righe inserite`);
-    } catch (e) { errors.push(`${month}: ${e.message}`); }
+    } catch (e) { errors.push(`${month}: ${msgErrore(e)}`); }
   }
   const buffer = await workbook.xlsx.writeBuffer();
   return { buffer, written, errors };
@@ -2813,6 +2854,7 @@ async function writeSimple(type, rows) {
 function simpleWriteSheet(ws, entries, cfg) {
   const FR = cfg.firstRow, C = cfg.cols;
   const maxCol = Math.max(...Object.values(C));
+  unshareFormulas(ws);
 
   // 1. inizio del piè di pagina: prima riga con una formula (somme) o con i
   //    testi dell'imposta di bollo / TOTALE — le righe dati non ne contengono
@@ -3079,7 +3121,7 @@ function shiftRowXml(rowXml, delta, soglia) {
 
 function editSheetXml(xml, camions) {
   const m = xml.match(/(<sheetData[^>]*>)([\s\S]*?)(<\/sheetData>)/);
-  if (!m) throw new Error('sheetData non trovato');
+  if (!m) throw new Error('foglio illeggibile: manca la tabella dei dati (sheetData) — riapri il file in Excel e risalvalo');
   const rowRe = /<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g;
   const allRows = (m[2].match(rowRe) || []).map(rx => ({ n: parseInt(rx.match(/\br="(\d+)"/)[1], 10), xml: rx }));
 
@@ -3088,7 +3130,7 @@ function editSheetXml(xml, camions) {
   for (const r of allRows) {
     if (/<c\b[^>]*\br="G\d+"[^>]*>\s*<f>/.test(r.xml)) { totaleN = r.n; break; }
   }
-  if (totaleN < 0) throw new Error('riga TOTALE non trovata');
+  if (totaleN < 0) throw new Error('nel foglio non si trova la riga TOTALE: controlla che il foglio del mese sia fatto come gli altri');
 
   // ultimo numero camion in col A
   let lastNum = 0;
@@ -3167,7 +3209,7 @@ async function writeGross(rows) {
       const paRe = new RegExp(`(${month}!\\$[A-Z]+\\$\\d+:\\$[A-Z]+\\$)(\\d+)`);
       wbXmlNew = wbXmlNew.replace(paRe, (mm, a, n) => a + (parseInt(n,10) + newRows) + '');
       written.push(`${month}: ${mCamions.length} camion, ${newRows} spedizioni inserite`);
-    } catch (e) { errors.push(`${month}: ${e.message}`); }
+    } catch (e) { errors.push(`${month}: ${msgErrore(e)}`); }
   }
 
   wbXmlNew = wbXmlNew.replace(/<calcPr[^>]*\/>/, mm =>
@@ -3192,6 +3234,47 @@ async function writeGross(rows) {
 // ============================================================
 // UTIL
 // ============================================================
+// ============================================================
+// MESSAGGI DI ERRORE IN ITALIANO
+// Le librerie (ExcelJS, JSZip, pdf.js) e il browser parlano inglese e in
+// ufficio non aiutano: qui i casi noti diventano una frase che dice COSA è
+// successo e COSA fare. Gli altri restano col testo originale, così se
+// capita qualcosa di nuovo si vede comunque di cosa si tratta.
+// ============================================================
+function msgErrore(e) {
+  const raw = String((e && e.message) || e || '').trim();
+  const name = String((e && e.name) || '');
+  const m = (name + ' ' + raw).toLowerCase();
+
+  if (/shared formula master/.test(m))
+    return 'Il foglio usa formule "condivise" nella colonna dei numeri progressivi e la scrittura le ha spezzate. Riprova: se l\'errore torna, il foglio del mese va rifatto copiandone uno buono.';
+  if (/no such file|notfounderror|not found.*handle|file non trovato/.test(m))
+    return 'Il file non si trova più dove era stato collegato (spostato o rinominato?): ricollega la cartella delle distinte.';
+  if (/nomodificationallowed|is locked|being used by another|access denied|eperm|ebusy/.test(m))
+    return 'Il file è aperto in Excel (o bloccato da un altro programma): chiudilo e riprova.';
+  if (/notallowederror|permission|denied|non consentito/.test(m))
+    return 'Il browser non ha dato il permesso di scrivere: clicca di nuovo sul bottone e consenti l\'accesso alla cartella. Se non compare nessuna richiesta, l\'app va aperta dall\'indirizzo https (non con doppio clic sul file).';
+  if (/aborterror|user (aborted|activation|cancel)|the user aborted/.test(m))
+    return 'Operazione annullata (finestra chiusa senza scegliere un file).';
+  if (/securityerror|secure context|showopenfilepicker|showdirectorypicker/.test(m))
+    return 'Questa funzione richiede che l\'app sia aperta da un indirizzo https (o localhost): aperta con doppio clic sul file il browser la disattiva.';
+  if (/quotaexceeded|storage|spazio/.test(m))
+    return 'Spazio insufficiente sul disco o nella memoria del browser: libera spazio e riprova.';
+  if (/end of (central directory|data)|corrupted zip|invalid signature|not a zip|can't find end of central/.test(m))
+    return 'Il file Excel non è leggibile (danneggiato o non è un .xlsx): riaprilo in Excel e risalvalo.';
+  if (/nessun foglio mese/.test(m))
+    return 'Nel file non c\'è nessun foglio con il nome di un mese (GENNAIO, FEBBRAIO…): controlla di aver collegato la distinta giusta.';
+  if (/password|encrypted/.test(m))
+    return 'Il PDF è protetto da password: salvane una copia senza protezione e ricaricala.';
+  if (/invalid pdf|pdf structure|unexpected server response|missing pdf/.test(m))
+    return 'Il PDF non è leggibile (danneggiato o non è un vero PDF): riscaricalo o riuniscilo di nuovo.';
+  if (/out of memory|allocation failed/.test(m))
+    return 'Memoria esaurita: carica meno PDF per volta (o chiudi le altre schede del browser) e riprova.';
+  if (/failed to fetch|networkerror|load failed/.test(m))
+    return 'Caricamento non riuscito: controlla la connessione (l\'app scarica le librerie di lettura PDF ed Excel alla prima apertura).';
+  return raw || 'errore sconosciuto';
+}
+
 function escHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escAttr(s) { return escHtml(s).replace(/"/g,'&quot;'); }
 </script>
