@@ -225,12 +225,15 @@
       </div>
     </div>
 
-    <!-- Fogli del mese: avviso in anticipo e creazione automatica -->
+    <!-- Fogli del mese e file dell'anno: avvisi in anticipo e creazione automatica -->
     <div id="mese-banner"></div>
+    <div id="anno-banner"></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <button class="btn btn-secondary btn-sm" onclick="controllaFogliMese(false)">📄 Controlla i fogli del mese</button>
+      <button class="btn btn-secondary btn-sm" onclick="apriPannelloAnno()">📅 Prepara i file dell'anno prossimo</button>
       <span id="data-simulata"></span>
     </div>
+    <div id="anno-area"></div>
 
     <div id="excel-summary"></div>
 
@@ -2191,7 +2194,8 @@ async function confermaScrittura() {
         if (r.creati.length) {
           distinte[t].buffer = r.buffer;
           distinte[t].sheetNames = (await zipFogli(await JSZip.loadAsync(r.buffer.slice(0)))).fogli.map(f => f.name);
-          written.push(...r.creati.map(c => `${distLabel(t)} — foglio ${c.nome} creato (copia di ${c.sorgente})`));
+          written.push(...r.creati.map(c => `${distLabel(t)} — foglio ${c.nome} creato (copia di ${c.sorgente})`
+            + (c.rifDaCompilare ? ' ⚠ riferimento in intestazione da riscrivere a mano' : '')));
         }
       }
       // 2. calcola il file aggiornato
@@ -2399,7 +2403,8 @@ async function doWriteAll(result) {
       if (!r.creati.length) continue;
       distinte[p.t].buffer = r.buffer;
       distinte[p.t].sheetNames = (await zipFogli(await JSZip.loadAsync(r.buffer.slice(0)))).fogli.map(f => f.name);
-      written.push(...r.creati.map(c => `${distLabel(p.t)} — foglio ${c.nome} creato (copia di ${c.sorgente})`));
+      written.push(...r.creati.map(c => `${distLabel(p.t)} — foglio ${c.nome} creato (copia di ${c.sorgente})`
+        + (c.rifDaCompilare ? ' ⚠ riferimento in intestazione da riscrivere a mano' : '')));
     }
   } catch (e) { errors.push('Creazione fogli mese — ' + msgErrore(e)); }
 
@@ -3543,6 +3548,40 @@ function rinominaMeseNelFoglio(sheetXml, info, dstIdx, anno, ctx) {
   return head + out + tail;
 }
 
+// Alcune intestazioni contengono un RIFERIMENTO che cambia ogni mese
+// (FIXIT: "Référence: 201.07/16389" — 201, mese, progressivo). Copiato tale
+// e quale nel foglio nuovo sarebbe il riferimento del mese sbagliato: si
+// lascia l'etichetta e si toglie il numero, che va reinserito a mano.
+const RE_RIF_INTESTAZIONE = /\b\d{3}\s*[.\/-]\s*\d{2}\s*[.\/-]\s*\d{3,}\b/g;
+function svuotaRiferimentoIntestazione(sheetXml, info, ctx) {
+  const { head, rows, tail } = xlSplitRows(sheetXml);
+  let trovato = false, out = '';
+  for (const r of rows) {
+    if (r.n >= info.first) { out += r.xml; continue; }
+    out += r.xml.replace(XL_CELL_RE, cx => {
+      if (!/\bt="s"/.test(cx)) return cx;
+      const txt = ctx.sst[+((cx.match(/<v>([\s\S]*?)<\/v>/) || [])[1])];
+      RE_RIF_INTESTAZIONE.lastIndex = 0;
+      if (txt == null || !RE_RIF_INTESTAZIONE.test(txt)) return cx;
+      RE_RIF_INTESTAZIONE.lastIndex = 0;
+      const nuovo = txt.replace(RE_RIF_INTESTAZIONE, '').replace(/\s+$/, '');
+      trovato = true;
+      return cx.replace(/<v>[\s\S]*?<\/v>/, '<v>' + ctx.add(nuovo) + '</v>');
+    });
+  }
+  return { xml: head + out + tail, trovato };
+}
+
+// Aggiorna l'ultima riga dell'area di stampa di un foglio (serve al GROSS,
+// che appena creato è molto più corto del mese da cui è stato copiato)
+async function impostaAreaStampa(zip, nomeFoglio, ultimaRiga) {
+  let wb = await zip.file('xl/workbook.xml').async('string');
+  const cita = /^[A-Za-z_][A-Za-z0-9_]*$/.test(nomeFoglio) ? nomeFoglio : `'${nomeFoglio}'`;
+  zip.file('xl/workbook.xml', wb.replace(/<definedName\b[^>]*>[\s\S]*?<\/definedName>/g, tag =>
+    (tag.includes('Print_Area') && tag.includes(cita + '!'))
+      ? tag.replace(/(\$?[A-Z]+\$?)(\d+)(<\/definedName>)/, (m, a, n, b) => a + ultimaRiga + b) : tag));
+}
+
 // ------------------------------------------------------------
 // Elenco dei fogli di un workbook già aperto con JSZip
 // ------------------------------------------------------------
@@ -3625,6 +3664,8 @@ async function zipDuplicaMese(zip, mIdx, tipo, nomeSorgente, anno) {
     nuovoXml = svuotaFoglioSlot(nuovoXml, info);
   }
   nuovoXml = rinominaMeseNelFoglio(nuovoXml, info, mIdx, anno, ctx);
+  const rif = svuotaRiferimentoIntestazione(nuovoXml, info, ctx);
+  nuovoXml = rif.xml;
 
   // 2. parte nuova + relazioni del foglio (printerSettings DUPLICATO: due
   //    fogli non devono condividere la stessa parte)
@@ -3708,7 +3749,25 @@ async function zipDuplicaMese(zip, mIdx, tipo, nomeSorgente, anno) {
   const sstNuovo = ctx.serialize();
   if (sstNuovo) zip.file('xl/sharedStrings.xml', sstNuovo);
 
-  return { nome: nomeNuovo, sorgente: sorg.name, path: nuovoPath, righe: ultimaRiga };
+  return { nome: nomeNuovo, sorgente: sorg.name, path: nuovoPath, righe: ultimaRiga, rifDaCompilare: rif.trovato };
+}
+
+// docProps/app.xml elenca i nomi dei fogli: è solo informativo (finestra
+// Proprietà di Excel) ma dopo aver aggiunto o tolto fogli sarebbe sbagliato,
+// quindi lo si riscrive con l'elenco vero.
+async function aggiornaAppXml(zip) {
+  const f = zip.file('docProps/app.xml');
+  if (!f) return;
+  let xml = await f.async('string');
+  if (!/<TitlesOfParts>/.test(xml)) return;
+  const nomi = (await zipFogli(zip)).fogli.map(s => s.name);
+  xml = xml.replace(/<TitlesOfParts>[\s\S]*?<\/TitlesOfParts>/,
+    `<TitlesOfParts><vt:vector size="${nomi.length}" baseType="lpstr">` +
+    nomi.map(n => `<vt:lpstr>${escHtml(n)}</vt:lpstr>`).join('') + '</vt:vector></TitlesOfParts>');
+  xml = xml.replace(/<HeadingPairs>[\s\S]*?<\/HeadingPairs>/,
+    `<HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Fogli di lavoro</vt:lpstr></vt:variant>` +
+    `<vt:variant><vt:i4>${nomi.length}</vt:i4></vt:variant></vt:vector></HeadingPairs>`);
+  zip.file('docProps/app.xml', xml);
 }
 
 // Controllo prima di scrivere: ogni parte modificata deve essere XML valido
@@ -3756,6 +3815,8 @@ async function creaFogliMese(buffer, tipo, piano) {
     zip.file('xl/_rels/workbook.xml.rels', (await zip.file('xl/_rels/workbook.xml.rels').async('string'))
       .replace(/<Relationship\b[^>]*calcChain\.xml[^>]*\/>/, ''));
   }
+
+  await aggiornaAppXml(zip);
 
   // DEFLATE come fa Excel: senza, il file uscirebbe 4-5 volte più grande
   // (e queste distinte stanno su una cartella di rete)
@@ -3823,6 +3884,315 @@ function renderPianoFogli(piano) {
     <ul style="margin:6px 0 0 18px">${righe}</ul></div>`;
 }
 
+// ============================================================
+// FILE DELL'ANNO SUCCESSIVO
+// ------------------------------------------------------------
+// A gennaio non serve un foglio nuovo ma un FILE nuovo, tredici volte.
+// Stesso meccanismo del mese su scala annuale: dal file dell'anno in corso
+// si tiene UN solo foglio (il modello "_" se c'è, altrimenti il mese con
+// meno righe), lo si svuota e lo si rinomina GENNAIO; gli altri mesi si
+// eliminano e li ricrea la funzione mensile strada facendo.
+// I file nuovi nascono in una SOTTOCARTELLA dell'anno (2027/) dentro la
+// cartella collegata: così le due annate non si confondono mai e a gennaio
+// basta ricollegare la cartella nuova, una volta per PC.
+// Il file dell'anno vecchio non viene mai toccato: si legge soltanto.
+// ============================================================
+function annoDelFile(tipo) {
+  const d = distinte[tipo];
+  const m = d && String(d.name).match(/\b(20\d\d)\b/);
+  return m ? +m[1] : null;
+}
+function nomeFileAnno(nome, annoNuovo) {
+  return /\b20\d\d\b/.test(nome)
+    ? nome.replace(/\b20\d\d\b/, String(annoNuovo))
+    : nome.replace(/\.xlsx$/i, ` ${annoNuovo}.xlsx`);
+}
+
+// Elimina dallo zip tutti i fogli che non sono in "tenere": tag <sheet>,
+// relazione, parte, rels del foglio, printerSettings non più usati, Override
+// in [Content_Types] e definedName (che sono indicizzati per POSIZIONE e
+// vanno quindi rinumerati sui fogli rimasti).
+async function zipEliminaFogli(zip, tenere) {
+  const { wbXml, relsXml, fogli } = await zipFogli(zip);
+  const tenuti = fogli.filter(f => tenere.has(f.name));
+  const tolti = fogli.filter(f => !tenere.has(f.name));
+  if (!tolti.length) return;
+  if (!tenuti.length) throw new Error('non resterebbe nessun foglio nel file');
+
+  const mappa = {};
+  tenuti.forEach((f, i) => { mappa[f.i] = i; });
+  const nomiTenuti = new Set(tenuti.map(f => f.name));
+  let wb = wbXml.replace(/<sheets>[\s\S]*?<\/sheets>/, '<sheets>' + tenuti.map(f => f.tag).join('') + '</sheets>');
+  wb = wb.replace(/<definedName\b[^>]*>([\s\S]*?)<\/definedName>/g, (tag, val) => {
+    // un nome definito che cita un foglio eliminato resterebbe orfano
+    // (nel CAS c'è un _FilterDatabase su SETTEMBRE, senza localSheetId)
+    const citati = [...val.matchAll(/(?:'([^']+)'|([A-Za-z0-9_.]+))!/g)].map(m => m[1] || m[2]);
+    if (citati.some(n => !nomiTenuti.has(n))) return '';
+    const m = tag.match(/localSheetId="(\d+)"/);
+    if (!m) return tag;
+    const n = mappa[+m[1]];
+    return n == null ? '' : tag.replace(/localSheetId="\d+"/, `localSheetId="${n}"`);
+  }).replace(/<definedNames>\s*<\/definedNames>/, '');
+  zip.file('xl/workbook.xml', wb);
+
+  // printerSettings ancora referenziati dai fogli che restano
+  const ancoraUsati = new Set();
+  for (const f of tenuti) {
+    const rp = f.path.replace('worksheets/', 'worksheets/_rels/') + '.rels';
+    if (zip.file(rp)) for (const m of (await zip.file(rp).async('string')).matchAll(/Target="([^"]+)"/g))
+      ancoraUsati.add(m[1].replace(/^\.\.\//, ''));
+  }
+  let rels = relsXml, ct = await zip.file('[Content_Types].xml').async('string');
+  for (const f of tolti) {
+    rels = rels.replace(/<Relationship\b[^>]*\/>/g, tag => tag.includes(`Id="${f.rid}"`) ? '' : tag);
+    ct = ct.replace(/<Override\b[^>]*\/>/g, tag => tag.includes(`PartName="/${f.path}"`) ? '' : tag);
+    const rp = f.path.replace('worksheets/', 'worksheets/_rels/') + '.rels';
+    if (zip.file(rp)) {
+      for (const m of (await zip.file(rp).async('string')).matchAll(/Target="([^"]+)"/g)) {
+        const t = m[1].replace(/^\.\.\//, '');
+        if (!ancoraUsati.has(t)) zip.remove('xl/' + t);
+      }
+      zip.remove(rp);
+    }
+    zip.remove(f.path);
+  }
+  zip.file('xl/_rels/workbook.xml.rels', rels);
+  zip.file('[Content_Types].xml', ct);
+}
+
+// Rinomina un foglio: nel tag <sheet> e nei riferimenti dei definedName
+// (le aree di stampa citano il foglio per nome, es. "LUGLIO!$A$1:$F$34")
+async function zipRinominaFoglio(zip, vecchio, nuovo) {
+  if (vecchio === nuovo) return;
+  const cita = n => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n) ? n : `'${n}'`;
+  let wb = await zip.file('xl/workbook.xml').async('string');
+  wb = wb.replace(/<sheet\b[^>]*\/>/g, tag =>
+    tag.includes(`name="${escAttr(vecchio)}"`) ? tag.replace(`name="${escAttr(vecchio)}"`, `name="${escAttr(nuovo)}"`) : tag);
+  wb = wb.replace(/<definedName\b[^>]*>([\s\S]*?)<\/definedName>/g, (m, val) =>
+    m.replace(val, val.split(cita(vecchio) + '!').join(cita(nuovo) + '!')));
+  zip.file('xl/workbook.xml', wb);
+}
+
+// L'anno compare anche fuori dal titolo del mese ("C.A.S. EXPORT - 2026",
+// "ELTEK SPA - 2026"): si aggiorna in tutte le celle sopra i dati. Sotto no,
+// perché lì c'è il testo del bollo che cita il d.p.r. 642/1972.
+function aggiornaAnnoNelFoglio(sheetXml, info, annoNuovo, ctx) {
+  const { head, rows, tail } = xlSplitRows(sheetXml);
+  let out = '';
+  for (const r of rows) {
+    if (r.n >= info.first) { out += r.xml; continue; }
+    out += r.xml.replace(XL_CELL_RE, cx => {
+      if (!/\bt="s"/.test(cx)) return cx;
+      const txt = ctx.sst[+((cx.match(/<v>([\s\S]*?)<\/v>/) || [])[1])];
+      if (txt == null || !/\b20\d\d\b/.test(txt)) return cx;
+      const nuovo = txt.replace(/\b20\d\d\b/g, String(annoNuovo));
+      return nuovo === txt ? cx : cx.replace(/<v>[\s\S]*?<\/v>/, '<v>' + ctx.add(nuovo) + '</v>');
+    });
+  }
+  return head + out + tail;
+}
+
+async function creaFileAnno(buffer, tipo, annoNuovo) {
+  const zip = await JSZip.loadAsync(buffer.slice(0));
+  const { fogli } = await zipFogli(zip);
+  const nomiOriginali = fogli.map(f => f.name);
+  const nomeGennaio = nomeMeseComeNelFile(nomiOriginali, 0);
+  const sstFile = zip.file('xl/sharedStrings.xml');
+  const sstIniziale = sstFile ? await sstFile.async('string') : '<sst></sst>';
+
+  // sorgente: il modello "_" se c'è, altrimenti il mese con meno righe usate
+  let scelta = null;
+  for (const f of fogli) {
+    const modello = f.name.trim() === '_';
+    if (!modello && meseIdxDaNome(f.name) < 0) continue;
+    try {
+      const info = analizzaFoglio(await zip.file(f.path).async('string'), sstCtx(sstIniziale).sst, tipo);
+      const c = { f, modello, info };
+      if (!scelta || (c.modello && !scelta.modello) ||
+          (c.modello === scelta.modello && c.info.usate < scelta.info.usate)) scelta = c;
+    } catch (e) { /* foglio non conforme */ }
+  }
+  if (!scelta) throw new Error('nessun foglio da cui partire: il file non ha fogli mese riconoscibili');
+
+  const modello = fogli.find(f => f.name.trim() === '_');
+  const tenere = new Set([scelta.f.name]);
+  if (modello) tenere.add(modello.name);
+  await zipEliminaFogli(zip, tenere);
+
+  let rifDaCompilare = false;
+  if (scelta.modello) {
+    // il modello resta modello: GENNAIO nasce come sua copia
+    const r = await zipDuplicaMese(zip, 0, tipo, modello.name, annoNuovo);
+    if (r && r.nome !== nomeGennaio) await zipRinominaFoglio(zip, r.nome, nomeGennaio);
+    rifDaCompilare = !!(r && r.rifDaCompilare);
+  } else {
+    // l'unico mese rimasto diventa GENNAIO e viene svuotato
+    await zipRinominaFoglio(zip, scelta.f.name, nomeGennaio);
+    const ctx = sstCtx(await zip.file('xl/sharedStrings.xml').async('string'));
+    const f = (await zipFogli(zip)).fogli.find(x => x.name === nomeGennaio);
+    let xml = await zip.file(f.path).async('string');
+    const info = analizzaFoglio(xml, ctx.sst, tipo);
+    let ultima = null;
+    if (tipo === 'GROSS') { const g = svuotaFoglioGross(xml, info); xml = g.xml; ultima = g.ultima; }
+    else xml = svuotaFoglioSlot(xml, info);
+    xml = rinominaMeseNelFoglio(xml, info, 0, annoNuovo, ctx);
+    const rif = svuotaRiferimentoIntestazione(xml, info, ctx);
+    xml = rif.xml; rifDaCompilare = rif.trovato;
+    zip.file(f.path, xml);
+    const s = ctx.serialize(); if (s) zip.file('xl/sharedStrings.xml', s);
+    // il foglio GROSS appena svuotato è molto più corto: l'area di stampa
+    // altrimenti resterebbe quella del mese da cui è stato copiato
+    if (ultima) await impostaAreaStampa(zip, nomeGennaio, ultima);
+  }
+
+  // anno nelle intestazioni di tutti i fogli rimasti (anche il modello)
+  const ctx2 = sstCtx(await zip.file('xl/sharedStrings.xml').async('string'));
+  for (const f of (await zipFogli(zip)).fogli) {
+    let xml = await zip.file(f.path).async('string');
+    try {
+      const info = analizzaFoglio(xml, ctx2.sst, tipo);
+      zip.file(f.path, aggiornaAnnoNelFoglio(xml, info, annoNuovo, ctx2));
+    } catch (e) { /* foglio non analizzabile: intestazione lasciata com'è */ }
+  }
+  const s2 = ctx2.serialize(); if (s2) zip.file('xl/sharedStrings.xml', s2);
+
+  let wb = await zip.file('xl/workbook.xml').async('string');
+  wb = /<calcPr[^>]*\/>/.test(wb)
+    ? wb.replace(/<calcPr[^>]*\/>/, m => m.includes('fullCalcOnLoad') ? m : m.replace('/>', ' fullCalcOnLoad="1"/>'))
+    : wb.replace('</workbook>', '<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
+  zip.file('xl/workbook.xml', wb);
+  if (zip.file('xl/calcChain.xml')) {
+    zip.remove('xl/calcChain.xml');
+    zip.file('[Content_Types].xml', (await zip.file('[Content_Types].xml').async('string'))
+      .replace(/<Override PartName="\/xl\/calcChain\.xml"[^>]*\/>/, ''));
+    zip.file('xl/_rels/workbook.xml.rels', (await zip.file('xl/_rels/workbook.xml.rels').async('string'))
+      .replace(/<Relationship\b[^>]*calcChain\.xml[^>]*\/>/, ''));
+  }
+  await aggiornaAppXml(zip);
+
+  const out = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  await verificaWorkbook(out, [nomeGennaio]);
+  const fogliFinali = (await zipFogli(await JSZip.loadAsync(out.slice(0)))).fogli.map(f => f.name);
+  return { buffer: out, fogli: fogliFinali, sorgente: scelta.f.name, gennaio: nomeGennaio, rifDaCompilare };
+}
+
+// ------------------------------------------------------------
+// Pannello dell'anno nuovo
+// ------------------------------------------------------------
+let pianoAnno = null;
+
+function annoProposto() {
+  const anni = TIPI_DISTINTA.map(annoDelFile).filter(Boolean);
+  return (anni.length ? Math.max(...anni) : oggiApp().getFullYear()) + 1;
+}
+
+function apriPannelloAnno(anno) {
+  const el = document.getElementById('anno-area');
+  if (!el) return;
+  const tipi = TIPI_DISTINTA.filter(t => distinte[t]);
+  if (!tipi.length) { alert('Prima collega (o trascina) i file delle distinte dell\'anno in corso.'); return; }
+  const nuovo = anno || annoProposto();
+  pianoAnno = tipi.map(t => ({
+    t, nomeVecchio: distinte[t].name, annoVecchio: annoDelFile(t),
+    nomeNuovo: nomeFileAnno(distinte[t].name, nuovo)
+  }));
+  el.innerHTML = `<div style="border:2px solid #1e6fd9;border-radius:10px;padding:14px;margin:12px 0">
+    <h3 style="font-size:13.5px;margin-bottom:6px">📅 File delle distinte per l'anno ${nuovo}</h3>
+    <div class="hint" style="margin:0 0 10px">Ogni file nuovo nasce con il <strong>solo GENNAIO</strong> (vuoto) e il foglio modello dove c'è:
+      gli altri mesi li crea l'app strada facendo, come adesso. I file dell'anno in corso <strong>non vengono toccati</strong>.
+      Controlla i nomi proposti — alcuni si portano dietro suffissi che forse non vuoi.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <label style="font-size:12.5px">Anno: <input id="anno-input" type="number" value="${nuovo}" style="width:80px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px"></label>
+      <label style="font-size:12.5px">Sottocartella: <input id="anno-cartella" value="${nuovo}" style="width:110px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px"></label>
+      <button class="btn btn-secondary btn-sm" onclick="apriPannelloAnno(+document.getElementById('anno-input').value)">Aggiorna i nomi</button>
+    </div>
+    <table class="summary-table"><thead><tr><th>Distinta</th><th>File attuale</th><th>File nuovo</th></tr></thead><tbody>
+    ${pianoAnno.map((p, i) => `<tr><td>${escHtml(distLabel(p.t))}</td><td style="color:#6b7280">${escHtml(p.nomeVecchio)}</td>
+      <td><input id="anno-nome-${i}" value="${escAttr(p.nomeNuovo)}" style="width:100%;min-width:230px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"></td></tr>`).join('')}
+    </tbody></table>
+    <div id="anno-esito" style="margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btn-success btn-sm" onclick="preparaAnno('cartella')">📁 Crea i file nella sottocartella</button>
+      <button class="btn btn-secondary btn-sm" onclick="preparaAnno('copie')">🧪 Prova su copie scaricate</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('anno-area').innerHTML=''">Chiudi</button>
+    </div></div>`;
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function preparaAnno(modo) {
+  if (!pianoAnno || !pianoAnno.length) return;
+  const anno = +document.getElementById('anno-input').value;
+  const cartella = document.getElementById('anno-cartella').value.trim();
+  const esito = document.getElementById('anno-esito');
+  pianoAnno.forEach((p, i) => { p.nomeNuovo = document.getElementById('anno-nome-' + i).value.trim(); });
+  if (pianoAnno.some(p => !/\.xlsx$/i.test(p.nomeNuovo))) { alert('Tutti i nomi devono finire con .xlsx'); return; }
+  if (modo === 'cartella' && !cartella) { alert('Indica il nome della sottocartella (es. ' + anno + ').'); return; }
+
+  let sub = null;
+  if (modo === 'cartella') {
+    if (!dirHandle) { alert('Per creare i file serve la cartella collegata ("📁 Collega la cartella delle distinte"). In alternativa usa "Prova su copie scaricate" e mettili tu.'); return; }
+    try {
+      if ((await dirHandle.queryPermission({ mode: 'readwrite' })) !== 'granted'
+        && (await dirHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+        alert('Permesso di scrittura sulla cartella non concesso.'); return;
+      }
+      sub = await dirHandle.getDirectoryHandle(cartella, { create: true });
+    } catch (e) { alert('Non riesco a creare la sottocartella: ' + msgErrore(e)); return; }
+  }
+
+  esito.innerHTML = '<div style="font-size:12.5px;color:#1e40af">⏳ Creazione dei file in corso…</div>';
+  const fatti = [], errori = [];
+  for (const p of pianoAnno) {
+    const lbl = distLabel(p.t);
+    try {
+      const r = await creaFileAnno(distinte[p.t].buffer, p.t, anno);
+      if (modo === 'cartella') {
+        let esisteGia = false;
+        try { await sub.getFileHandle(p.nomeNuovo); esisteGia = true; } catch (e) { /* non c'è: bene */ }
+        if (esisteGia && !confirm(`Nella cartella ${cartella} esiste già "${p.nomeNuovo}".\n\nSovrascriverlo? (il suo contenuto attuale andrà perso)`)) {
+          errori.push(`${lbl} — saltato, il file esisteva già`); continue;
+        }
+        const fh = await sub.getFileHandle(p.nomeNuovo, { create: true });
+        const w = await fh.createWritable();
+        await w.write(r.buffer); await w.close();
+      } else {
+        downloadBytes(new Blob([r.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), p.nomeNuovo);
+      }
+      fatti.push(`${lbl} → ${p.nomeNuovo} (fogli: ${r.fogli.join(', ')} — da ${r.sorgente})`
+        + (r.rifDaCompilare ? ' ⚠ il riferimento in intestazione è stato svuotato: va riscritto a mano' : ''));
+    } catch (e) { errori.push(`${lbl} — ${msgErrore(e)}`); }
+  }
+
+  esito.innerHTML = `<div style="background:${errori.length ? '#fef2f2' : '#ecfdf5'};border:1px solid ${errori.length ? '#fecaca' : '#a7f3d0'};border-radius:8px;padding:10px 12px;font-size:12.5px;color:${errori.length ? '#991b1b' : '#065f46'};line-height:1.6">
+    ${fatti.length ? `<strong>✅ ${modo === 'cartella' ? 'File creati in ' + escHtml(cartella) + '/' : 'Copie scaricate'}:</strong><br>${fatti.map(escHtml).join('<br>')}` : ''}
+    ${errori.length ? `${fatti.length ? '<br>' : ''}<strong>Non riuscito:</strong><br>${errori.map(escHtml).join('<br>')}` : ''}
+    ${fatti.length && modo === 'cartella' ? `<br><br>Da gennaio collega la cartella <strong>${escHtml(cartella)}</strong> con "📁 Collega la cartella delle distinte": i file dell'anno vecchio restano dove sono, intatti.` : ''}
+    ${fatti.length && modo === 'copie' ? '<br><em>Apri le copie in Excel: se non compare nessun avviso di ripristino, sono a posto.</em>' : ''}</div>`;
+}
+
+// Avviso di fine anno (o quando i file collegati sono dell'anno scorso)
+function controllaAnnoNuovo() {
+  const el = document.getElementById('anno-banner');
+  if (!el) return;
+  el.innerHTML = '';
+  const tipi = TIPI_DISTINTA.filter(t => distinte[t]);
+  if (!tipi.length) return;
+  const d = oggiApp(), anni = tipi.map(annoDelFile).filter(Boolean);
+  if (!anni.length) return;
+  const annoFile = Math.max(...anni);
+  const giorni = Math.round((new Date(d.getFullYear(), 11, 31) - d) / 86400000);
+  const inRitardo = annoFile < d.getFullYear();
+  if (!inRitardo && !(d.getMonth() === 11 && giorni <= 20)) return;
+  el.innerHTML = `<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:#3730a3;line-height:1.6">
+    📅 <strong>${inRitardo ? `I file collegati sono ancora del ${annoFile}.` : `Il ${d.getFullYear() + 1} inizia tra ${giorni} giorn${giorni === 1 ? 'o' : 'i'}.`}</strong>
+    Posso preparare i file delle distinte per il ${annoFile + 1} — uno per cliente, con il solo gennaio vuoto, in una sottocartella dedicata.
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="apriPannelloAnno(${annoFile + 1})">Prepara i file del ${annoFile + 1}</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('anno-banner').innerHTML=''">Più tardi</button>
+    </div></div>`;
+}
+
 // ------------------------------------------------------------
 // Preparazione "in anticipo" e prova
 // ------------------------------------------------------------
@@ -3850,6 +4220,7 @@ async function controllaFogliMese(silenzioso) {
   const tipi = TIPI_DISTINTA.filter(t => distinte[t]);
   if (!tipi.length) { el.innerHTML = ''; pianoCorrente = null; return; }
   const mesi = mesiDaPreparare();
+  controllaAnnoNuovo();
   let piano;
   try { piano = await pianificaFogli(tipi, () => mesi); }
   catch (e) { el.innerHTML = ''; return; }
@@ -3906,9 +4277,10 @@ async function preparaFogli(modo) {
           distinte[p.t].name.replace(/\.xlsx$/i, '_conFogliNuovi.xlsx'));
       }
       const sorg = [...new Set(r.creati.map(c => c.sorgente))];
-      esito.push(r.creati.length === 1
+      esito.push((r.creati.length === 1
         ? `${lbl} — foglio ${r.creati[0].nome} creato (copia di ${r.creati[0].sorgente})`
-        : `${lbl} — fogli ${r.creati.map(c => c.nome).join(' e ')} creati (copia di ${sorg.join(' e ')})`);
+        : `${lbl} — fogli ${r.creati.map(c => c.nome).join(' e ')} creati (copia di ${sorg.join(' e ')})`)
+        + (r.creati.some(c => c.rifDaCompilare) ? ' ⚠ riferimento in intestazione da riscrivere a mano' : ''));
     } catch (e) { errori.push(`${lbl} — ${msgErrore(e)}`); }
   }
 
